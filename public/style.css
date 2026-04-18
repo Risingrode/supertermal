@@ -981,6 +981,12 @@ body {
   border-color: var(--terminal-line);
 }
 
+.terminal-list-item.dragging {
+  opacity: 0.5;
+  background: var(--terminal-list-hover);
+  border: 1px dashed var(--terminal-line);
+}
+
 .terminal-list-item.active {
   background: var(--terminal-list-active);
   border-color: color-mix(in srgb, var(--terminal-list-accent) 32%, transparent);

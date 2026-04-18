@@ -4495,11 +4495,24 @@
     function renderTerminalList() {
       if (!terminalList) return;
       terminalList.innerHTML = '';
-      for (const [termId, entry] of terminals.entries()) {
+
+      const savedOrder = JSON.parse(localStorage.getItem('cc-web-terminal-order') || '[]');
+      const sortedIds = Array.from(terminals.keys()).sort((a, b) => {
+        const indexA = savedOrder.indexOf(a);
+        const indexB = savedOrder.indexOf(b);
+        if (indexA === -1 && indexB === -1) return 0;
+        if (indexA === -1) return 1;
+        if (indexB === -1) return -1;
+        return indexA - indexB;
+      });
+
+      for (const termId of sortedIds) {
+        const entry = terminals.get(termId);
         const item = document.createElement('div');
         item.className = `terminal-list-item${termId === activeTermId ? ' active' : ''}`;
         item.dataset.termId = termId;
         item.tabIndex = 0;
+        item.draggable = true;
         item.innerHTML = `
           <span class="terminal-list-item-main">
             <span class="terminal-list-item-title">${escapeHtml(entry.meta?.title || '终端')}</span>
@@ -4537,6 +4550,31 @@
             switchTerminal(termId);
           }
         });
+
+        item.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/plain', termId);
+          item.classList.add('dragging');
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+        });
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          const draggingItem = terminalList.querySelector('.dragging');
+          if (draggingItem && draggingItem !== item) {
+            const rect = item.getBoundingClientRect();
+            const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+            terminalList.insertBefore(draggingItem, next ? item.nextSibling : item);
+          }
+        });
+        item.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const order = Array.from(terminalList.querySelectorAll('.terminal-list-item'))
+            .map(el => el.dataset.termId);
+          localStorage.setItem('cc-web-terminal-order', JSON.stringify(order));
+          renderTerminalList();
+        });
+
         terminalList.appendChild(item);
       }
       if (terminalEmptyState) terminalEmptyState.hidden = terminals.size > 0;
@@ -4636,6 +4674,10 @@
       terminalAddBtn.addEventListener('click', () => {
         if (!ccApi.ws || ccApi.ws.readyState !== 1) {
           appendError('连接未就绪，无法创建终端。');
+          return;
+        }
+        if (terminals.size >= 4) {
+          alert('最多只能创建 4 个终端');
           return;
         }
         ccApi.send({ type: 'terminal_create', hostId: currentHostId, cwd: currentCwd || undefined });
