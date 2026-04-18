@@ -4394,7 +4394,6 @@
       const wrapper = document.createElement('div');
       wrapper.className = 'terminal-wrapper';
       wrapper.dataset.termId = termId;
-      wrapper.hidden = true;
       terminalContainer.appendChild(wrapper);
 
       const term = new Terminal({
@@ -4429,6 +4428,15 @@
           }
         });
       }
+
+      // Click to focus and switch active
+      wrapper.addEventListener('mousedown', () => {
+        if (activeTermId !== termId) {
+          switchTerminal(termId);
+        } else {
+          term.focus();
+        }
+      }, true);
 
       term.onData((data) => {
         const current = terminals.get(termId);
@@ -4581,34 +4589,40 @@
       updateTerminalToolbar();
     }
 
-    function revealTerminal(termId, entry) {
-      for (const [id, terminalEntry] of terminals.entries()) {
-        if (terminalEntry.wrapperEl) terminalEntry.wrapperEl.hidden = id !== termId;
+    function revealTerminal(termId) {
+      if (!terminalContainer) return;
+      terminalContainer.dataset.count = terminals.size;
+
+      for (const [id, entry] of terminals.entries()) {
+        if (entry.wrapperEl) {
+          entry.wrapperEl.hidden = false;
+          entry.wrapperEl.classList.toggle('active', id === termId);
+          if (entry.fitAddon && entry.term) {
+            entry.fitAddon.fit();
+            if (id === termId) {
+              requestAnimationFrame(() => entry.term.focus());
+            }
+          }
+        }
       }
-      if (!entry?.wrapperEl || !entry.fitAddon || !entry.term) return;
-      entry.wrapperEl.hidden = false;
-      requestAnimationFrame(() => {
-        entry.fitAddon.fit();
-        entry.term.refresh(0, Math.max(0, entry.term.rows - 1));
-        entry.term.focus();
-      });
     }
 
     function switchTerminal(termId) {
       if (!terminals.has(termId)) return;
       const previousId = activeTermId;
-      if (previousId && previousId !== termId) detachTerminal(previousId);
+      // if (previousId && previousId !== termId) detachTerminal(previousId); // Keep all attached for split view
 
       activeTermId = termId;
       localStorage.setItem('cc-web-active-terminal', termId);
 
-      const entry = ensureTerminalInstance(termId);
+      ensureTerminalInstance(termId);
       renderTerminalList();
       closeTerminalDrawer();
 
-      if (entry?.fitAddon && entry.term) {
-        revealTerminal(termId, entry);
-        if (!entry.attached && startTerminalAttachState(entry)) attachTerminal(termId);
+      revealTerminal(termId);
+      const entry = terminals.get(termId);
+      if (entry && !entry.attached && startTerminalAttachState(entry)) {
+        attachTerminal(termId);
       }
     }
 
@@ -4618,6 +4632,7 @@
       if (entry.term) entry.term.dispose();
       if (entry.wrapperEl) entry.wrapperEl.remove();
       terminals.delete(termId);
+      if (terminalContainer) terminalContainer.dataset.count = terminals.size;
     }
 
     function syncTerminalState_(serverTerminals) {
@@ -4625,11 +4640,6 @@
       for (const meta of serverTerminals) {
         const existing = terminals.get(meta.id) || { term: null, fitAddon: null, wrapperEl: null, attached: false, attaching: false, pendingInput: '' };
         existing.meta = meta;
-        if (meta.id !== activeTermId) {
-          existing.attached = false;
-          existing.attaching = false;
-          existing.pendingInput = '';
-        }
         next.set(meta.id, existing);
       }
 
@@ -4651,15 +4661,13 @@
       renderTerminalList();
 
       if (activeTermId) {
-        const entry = ensureTerminalInstance(activeTermId);
-        if (entry?.wrapperEl) {
-          revealTerminal(activeTermId, entry);
-          if (!entry.attached && startTerminalAttachState(entry)) attachTerminal(activeTermId);
-        } else {
-          switchTerminal(activeTermId);
-        }
+        ensureTerminalInstance(activeTermId);
+        revealTerminal(activeTermId);
+        const entry = terminals.get(activeTermId);
+        if (entry && !entry.attached && startTerminalAttachState(entry)) attachTerminal(activeTermId);
       } else {
         updateTerminalToolbar();
+        if (terminalContainer) terminalContainer.dataset.count = 0;
       }
     }
 
@@ -4712,27 +4720,29 @@
     }
 
     window.addEventListener('resize', debounce(() => {
-      const entry = getActiveTerminal();
-      if (!entry?.fitAddon || !entry.term) return;
-      requestAnimationFrame(() => {
-        entry.fitAddon.fit();
-        if (entry.attached && ccApi.ws && ccApi.ws.readyState === 1) {
-          ccApi.send({ type: 'terminal_resize', termId: activeTermId, cols: entry.term.cols, rows: entry.term.rows });
-        }
-      });
+      for (const [termId, entry] of terminals.entries()) {
+        if (!entry?.fitAddon || !entry.term) continue;
+        requestAnimationFrame(() => {
+          entry.fitAddon.fit();
+          if (entry.attached && ccApi.ws && ccApi.ws.readyState === 1) {
+            ccApi.send({ type: 'terminal_resize', termId, cols: entry.term.cols, rows: entry.term.rows });
+          }
+        });
+      }
     }, 100));
 
     const termResizeObserver = new ResizeObserver(debounce(() => {
-      const entry = getActiveTerminal();
-      if (!entry?.fitAddon || !entry.term) return;
-      requestAnimationFrame(() => {
-        if (entry.term.element && entry.term.element.offsetParent) {
-          entry.fitAddon.fit();
-          if (entry.attached && ccApi.ws && ccApi.ws.readyState === 1) {
-            ccApi.send({ type: 'terminal_resize', termId: activeTermId, cols: entry.term.cols, rows: entry.term.rows });
+      for (const [termId, entry] of terminals.entries()) {
+        if (!entry?.fitAddon || !entry.term) continue;
+        requestAnimationFrame(() => {
+          if (entry.term.element && entry.term.element.offsetParent) {
+            entry.fitAddon.fit();
+            if (entry.attached && ccApi.ws && ccApi.ws.readyState === 1) {
+              ccApi.send({ type: 'terminal_resize', termId, cols: entry.term.cols, rows: entry.term.rows });
+            }
           }
-        }
-      });
+        });
+      }
     }, 100));
     if (terminalContainer) termResizeObserver.observe(terminalContainer);
 
