@@ -9,7 +9,7 @@ const { createCodexRolloutStore } = require('./lib/codex-rollouts');
 const { sqliteExec, sqliteSupport } = require('./lib/sqlite');
 const terminalManager = require('./lib/terminal-manager');
 
-const ENV_FILE_PATH = process.env.CC_WEB_ENV_FILE || path.join(__dirname, '.env');
+const ENV_FILE_PATH = process.env.SUPERTERMAL_ENV_FILE || path.join(__dirname, '.env');
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -24,10 +24,10 @@ loadEnvFile(ENV_FILE_PATH);
 const PORT = parseInt(process.env.PORT) || 8002;
 const CLAUDE_PATH = process.env.CLAUDE_PATH || 'claude';
 const CODEX_PATH = process.env.CODEX_PATH || 'codex';
-const CONFIG_DIR = process.env.CC_WEB_CONFIG_DIR || path.join(__dirname, 'config');
-const SESSIONS_DIR = process.env.CC_WEB_SESSIONS_DIR || path.join(__dirname, 'sessions');
-const PUBLIC_DIR = process.env.CC_WEB_PUBLIC_DIR || path.join(__dirname, 'public');
-const LOGS_DIR = process.env.CC_WEB_LOGS_DIR || path.join(__dirname, 'logs');
+const CONFIG_DIR = process.env.SUPERTERMAL_CONFIG_DIR || path.join(__dirname, 'config');
+const SESSIONS_DIR = process.env.SUPERTERMAL_SESSIONS_DIR || path.join(__dirname, 'sessions');
+const PUBLIC_DIR = process.env.SUPERTERMAL_PUBLIC_DIR || path.join(__dirname, 'public');
+const LOGS_DIR = process.env.SUPERTERMAL_LOGS_DIR || path.join(__dirname, 'logs');
 const ATTACHMENTS_DIR = path.join(SESSIONS_DIR, '_attachments');
 const TERMINAL_REGISTRY_PATH = path.join(SESSIONS_DIR, '_terminals.json');
 const ATTACHMENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -423,10 +423,10 @@ function removeLegacyAuthConfig() {
 }
 
 function persistAuthConfig(config) {
-  setEnvValue(ENV_FILE_PATH, 'CC_WEB_PASSWORD', config.password);
-  setEnvValue(ENV_FILE_PATH, 'CC_WEB_PASSWORD_MUST_CHANGE', String(!!config.mustChange));
-  process.env.CC_WEB_PASSWORD = config.password;
-  process.env.CC_WEB_PASSWORD_MUST_CHANGE = String(!!config.mustChange);
+  setEnvValue(ENV_FILE_PATH, 'SUPERTERMAL_PASSWORD', config.password);
+  setEnvValue(ENV_FILE_PATH, 'SUPERTERMAL_PASSWORD_MUST_CHANGE', String(!!config.mustChange));
+  process.env.SUPERTERMAL_PASSWORD = config.password;
+  process.env.SUPERTERMAL_PASSWORD_MUST_CHANGE = String(!!config.mustChange);
   removeLegacyAuthConfig();
 }
 
@@ -441,12 +441,12 @@ function generateRandomPassword(length = 12) {
 }
 
 function loadAuthConfig() {
-  // Priority 1: .env has CC_WEB_PASSWORD
-  const envPw = process.env.CC_WEB_PASSWORD;
+  // Priority 1: .env has SUPERTERMAL_PASSWORD
+  const envPw = process.env.SUPERTERMAL_PASSWORD;
   if (envPw && envPw !== 'changeme') {
     return {
       password: envPw,
-      mustChange: parseEnvBool(process.env.CC_WEB_PASSWORD_MUST_CHANGE, false),
+      mustChange: parseEnvBool(process.env.SUPERTERMAL_PASSWORD_MUST_CHANGE, false),
     };
   }
 
@@ -505,9 +505,9 @@ let bannedIPs = new Map(); // ip -> expireTimestamp
 
 // Tailscale / loopback whitelist — never ban these IPs.
 // Extra whitelist can be provided via env var (comma/space separated):
-//   CC_WEB_IP_WHITELIST="<ip1>,<ip2>"
+//   SUPERTERMAL_IP_WHITELIST="<ip1>,<ip2>"
 const EXTRA_WHITELIST_IPS = new Set(
-  String(process.env.CC_WEB_IP_WHITELIST || '')
+  String(process.env.SUPERTERMAL_IP_WHITELIST || '')
     .split(/[\s,]+/)
     .map(s => s.trim())
     .filter(Boolean)
@@ -601,7 +601,7 @@ let MODEL_MAP = {
 const VALID_AGENTS = new Set(['claude', 'codex']);
 
 // Codex CLI has its own default model if --model is omitted. We override it for new Codex sessions
-// to keep cc-web behavior stable and predictable.
+// to keep supertermal behavior stable and predictable.
 const DEFAULT_CODEX_MODEL = 'gpt-5.4';
 
 // === Model Config ===
@@ -1377,7 +1377,7 @@ function formatRuntimeError(agent, raw, context = {}) {
       return '找不到 Codex CLI。请检查 Codex 设置里的 CLI 路径，或确认系统 PATH 中可直接运行 `codex`。';
     }
     if (/unexpected argument|unexpected option|Usage:\s*codex/i.test(raw || '')) {
-      return `Codex CLI 参数不兼容：${firstMeaningfulLine(condensed)}。建议检查当前 CLI 版本与 cc-web 的参数约定是否匹配。`;
+      return `Codex CLI 参数不兼容：${firstMeaningfulLine(condensed)}。建议检查当前 CLI 版本与 supertermal 的参数约定是否匹配。`;
     }
     if (/permission denied|EACCES|EPERM/i.test(condensed)) {
       return 'Codex CLI 启动失败：当前环境没有足够权限执行该命令或访问目标目录。';
@@ -1427,7 +1427,7 @@ function initStartMessage(agent) {
 function buildCodexInitPrompt(cwd) {
   const targetPath = path.join(cwd || process.cwd(), 'AGENTS.md');
   return [
-    'You are running cc-web\'s /init for a Codex session.',
+    'You are running supertermal\'s /init for a Codex session.',
     'Analyze the current workspace and create or update AGENTS.md at the repository root.',
     `The file path to write is: ${targetPath}`,
     'Requirements:',
@@ -2083,7 +2083,7 @@ function handleTestNotify(ws) {
   if (!config.provider || config.provider === 'off') {
     return wsSend(ws, { type: 'notify_test_result', success: false, message: '通知已关闭，无法测试' });
   }
-  sendNotification('CC-Web 测试通知', '这是一条测试消息，如果你收到了说明通知配置正确！').then((result) => {
+  sendNotification('SuperTermal 测试通知', '这是一条测试消息，如果你收到了说明通知配置正确！').then((result) => {
     wsSend(ws, { type: 'notify_test_result', success: result.ok, message: result.ok ? '测试消息已发送，请检查是否收到' : `发送失败: ${result.error || result.body || '未知错误'}` });
   });
 }
@@ -2248,7 +2248,7 @@ function handleSaveCodexConfig(ws, newConfig) {
   wsSend(ws, {
     type: 'system_message',
     message: requestedSearch
-      ? 'Codex 配置已保存。当前 cc-web 的 Codex exec 路径暂未接入 Web Search，已自动忽略该开关。'
+      ? 'Codex 配置已保存。当前 supertermal 的 Codex exec 路径暂未接入 Web Search，已自动忽略该开关。'
       : 'Codex 配置已保存',
   });
 }
@@ -3293,8 +3293,8 @@ function handleCheckUpdate(ws) {
   const https = require('https');
   const options = {
     hostname: 'raw.githubusercontent.com',
-    path: '/ZgDaniel/cc-web/main/CHANGELOG.md',
-    headers: { 'User-Agent': 'cc-web-update-check' },
+    path: '/ZgDaniel/supertermal/main/CHANGELOG.md',
+    headers: { 'User-Agent': 'supertermal-update-check' },
     timeout: 10000,
   };
 
@@ -3316,7 +3316,7 @@ function handleCheckUpdate(ws) {
         localVersion,
         latestVersion: latest,
         hasUpdate,
-        releaseUrl: 'https://github.com/ZgDaniel/cc-web',
+        releaseUrl: 'https://github.com/ZgDaniel/supertermal',
       });
     });
   });
@@ -3510,7 +3510,7 @@ function handleImportNativeSession(ws, msg) {
   const lines = content.split('\n');
   const messages = parseJsonlToMessages(lines);
 
-  // Find or create cc-web session with this claudeSessionId
+  // Find or create supertermal session with this claudeSessionId
   let existingSession = null;
   try {
     for (const f of listSessionJsonFiles()) {
@@ -3716,5 +3716,5 @@ setInterval(() => {
 plog('INFO', 'server_start', { port: PORT });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`CC-Web server listening on 0.0.0.0:${PORT}`);
+  console.log(`SuperTermal server listening on 0.0.0.0:${PORT}`);
 });

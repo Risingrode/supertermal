@@ -19,7 +19,7 @@
     ws.onopen = () => {
       reconnectAttempts = 0;
       // Get authToken from global state or localStorage
-      const authToken = (window.ccState && window.ccState.authToken) || localStorage.getItem('cc-web-token');
+      const authToken = (window.ccState && window.ccState.authToken) || localStorage.getItem('supertermal-token');
       if (authToken) {
         send({ type: 'auth', token: authToken });
       }

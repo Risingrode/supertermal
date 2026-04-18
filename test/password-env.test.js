@@ -102,7 +102,7 @@ function nextMessage(messages, predicate, timeoutMs = 10000) {
 }
 
 test('migrates legacy auth.json into the env file', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-env-migrate-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-env-migrate-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -120,12 +120,12 @@ test('migrates legacy auth.json into the env file', async (t) => {
   const port = await getFreePort();
   const server = await startServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: '',
-    CC_WEB_PASSWORD_MUST_CHANGE: '',
-    CC_WEB_ENV_FILE: envFile,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: '',
+    SUPERTERMAL_PASSWORD_MUST_CHANGE: '',
+    SUPERTERMAL_ENV_FILE: envFile,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   });
 
   let ws;
@@ -140,13 +140,13 @@ test('migrates legacy auth.json into the env file', async (t) => {
   assert.equal(client.authResult.mustChangePassword, true);
 
   const envContents = fs.readFileSync(envFile, 'utf8');
-  assert.match(envContents, /^CC_WEB_PASSWORD=Legacy!234$/m);
-  assert.match(envContents, /^CC_WEB_PASSWORD_MUST_CHANGE=true$/m);
+  assert.match(envContents, /^SUPERTERMAL_PASSWORD=Legacy!234$/m);
+  assert.match(envContents, /^SUPERTERMAL_PASSWORD_MUST_CHANGE=true$/m);
   assert.equal(fs.existsSync(path.join(configDir, 'auth.json')), false);
 });
 
 test('changing the password rewrites the env file', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-env-change-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-env-change-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -156,20 +156,20 @@ test('changing the password rewrites the env file', async (t) => {
   mkdirp(logsDir);
 
   fs.writeFileSync(envFile, [
-    'CC_WEB_PASSWORD=OldPass!234',
-    'CC_WEB_PASSWORD_MUST_CHANGE=true',
+    'SUPERTERMAL_PASSWORD=OldPass!234',
+    'SUPERTERMAL_PASSWORD_MUST_CHANGE=true',
     '',
   ].join('\n'));
 
   const port = await getFreePort();
   const server = await startServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: '',
-    CC_WEB_PASSWORD_MUST_CHANGE: '',
-    CC_WEB_ENV_FILE: envFile,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: '',
+    SUPERTERMAL_PASSWORD_MUST_CHANGE: '',
+    SUPERTERMAL_ENV_FILE: envFile,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   });
 
   let ws;
@@ -193,8 +193,8 @@ test('changing the password rewrites the env file', async (t) => {
   assert.equal(changed.success, true);
 
   const envContents = fs.readFileSync(envFile, 'utf8');
-  assert.match(envContents, /^CC_WEB_PASSWORD=NewPass!678\$$/m);
-  assert.match(envContents, /^CC_WEB_PASSWORD_MUST_CHANGE=false$/m);
+  assert.match(envContents, /^SUPERTERMAL_PASSWORD=NewPass!678\$$/m);
+  assert.match(envContents, /^SUPERTERMAL_PASSWORD_MUST_CHANGE=false$/m);
 
   ws.close();
   ws = null;

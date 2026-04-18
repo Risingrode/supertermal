@@ -293,7 +293,7 @@ function createFakeCodexHistory(homeDir) {
 }
 
 async function main() {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-regression-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-regression-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -320,10 +320,10 @@ async function main() {
 
   await withServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: password,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: password,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
     HOME: homeDir,
     CLAUDE_PATH: MOCK_CLAUDE,
     CODEX_PATH: MOCK_CODEX,

@@ -16,7 +16,7 @@ function readStdin() {
 
 (async function main() {
   const args = process.argv.slice(2);
-  // cc-web can place `resume` after other `codex exec` options (e.g. --json, -s).
+  // supertermal can place `resume` after other `codex exec` options (e.g. --json, -s).
   const isResume = args[0] === 'exec' && args.includes('resume');
   const threadId = (() => {
     if (!isResume) return `mock-${crypto.randomUUID()}`;
@@ -29,7 +29,7 @@ function readStdin() {
   })();
   const input = (await readStdin()).trim();
   const imageCount = args.filter((arg) => arg === '--image').length;
-  const statePath = path.join(os.tmpdir(), `cc-web-mock-codex-${threadId}.json`);
+  const statePath = path.join(os.tmpdir(), `supertermal-mock-codex-${threadId}.json`);
   let state = {};
   try {
     state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
@@ -68,7 +68,7 @@ function readStdin() {
     fs.writeFileSync(statePath, JSON.stringify(state));
   }
 
-  const isInitPrompt = input === '/init' || input.includes('You are running cc-web\'s /init for a Codex session.');
+  const isInitPrompt = input === '/init' || input.includes('You are running supertermal\'s /init for a Codex session.');
 
   if (isInitPrompt) {
     const agentsPath = path.join(process.cwd(), 'AGENTS.md');

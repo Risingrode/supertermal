@@ -121,7 +121,7 @@ function cleanupTmuxSessions(sessionsDir) {
 }
 
 test('global terminals are listed and shared across clients', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-terminals-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-terminals-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -133,10 +133,10 @@ test('global terminals are listed and shared across clients', async (t) => {
   const password = 'Terminal!234';
   const server = await startServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: password,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: password,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   });
 
   let ws1;
@@ -180,7 +180,7 @@ test('global terminals are listed and shared across clients', async (t) => {
 });
 
 test('terminals survive a server restart', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-terminals-restart-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-terminals-restart-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -192,10 +192,10 @@ test('terminals survive a server restart', async (t) => {
   const password = 'Terminal!234';
   const env = {
     PORT: String(port),
-    CC_WEB_PASSWORD: password,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: password,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   };
 
   let server = await startServer(env);
@@ -216,7 +216,7 @@ test('terminals survive a server restart', async (t) => {
 
   client.ws.send(JSON.stringify({ type: 'terminal_attach', termId: terminal.id, cols: 80, rows: 24 }));
   await nextMessage(client.messages, (msg) => msg.type === 'terminal_attached' && msg.termId === terminal.id);
-  client.ws.send(JSON.stringify({ type: 'terminal_input', termId: terminal.id, data: `export CCWEB_PERSIST_MARK=${marker}\n` }));
+  client.ws.send(JSON.stringify({ type: 'terminal_input', termId: terminal.id, data: `export SUPERTERMAL_PERSIST_MARK=${marker}\n` }));
   await sleep(250);
 
   await stopServer(server.child);
@@ -229,7 +229,7 @@ test('terminals survive a server restart', async (t) => {
 
   client.ws.send(JSON.stringify({ type: 'terminal_attach', termId: terminal.id, cols: 80, rows: 24 }));
   await nextMessage(client.messages, (msg) => msg.type === 'terminal_attached' && msg.termId === terminal.id);
-  client.ws.send(JSON.stringify({ type: 'terminal_input', termId: terminal.id, data: 'printf "$CCWEB_PERSIST_MARK\\n"\n' }));
+  client.ws.send(JSON.stringify({ type: 'terminal_input', termId: terminal.id, data: 'printf "$SUPERTERMAL_PERSIST_MARK\\n"\n' }));
 
   const persistedOutput = await nextMessage(
     client.messages,
@@ -240,7 +240,7 @@ test('terminals survive a server restart', async (t) => {
 });
 
 test('multiple clients see the same terminal output', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-terminals-sync-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-terminals-sync-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -252,10 +252,10 @@ test('multiple clients see the same terminal output', async (t) => {
   const password = 'Terminal!234';
   const server = await startServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: password,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: password,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   });
 
   let ws1;
@@ -303,7 +303,7 @@ test('multiple clients see the same terminal output', async (t) => {
 });
 
 test('terminals are scoped by host', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-terminals-hosts-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-terminals-hosts-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -331,10 +331,10 @@ test('terminals are scoped by host', async (t) => {
   const password = 'Terminal!234';
   const server = await startServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: password,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: password,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   });
 
   let ws;
@@ -368,7 +368,7 @@ test('terminals are scoped by host', async (t) => {
 });
 
 test('reattaching a terminal does not emit stale terminal_exit', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-terminals-reattach-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-terminals-reattach-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -380,10 +380,10 @@ test('reattaching a terminal does not emit stale terminal_exit', async (t) => {
   const password = 'Terminal!234';
   const server = await startServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: password,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: password,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   });
 
   let ws;
@@ -412,7 +412,7 @@ test('reattaching a terminal does not emit stale terminal_exit', async (t) => {
 });
 
 test('active terminal stays writable after terminal list refresh', async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-web-terminals-refresh-'));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'supertermal-terminals-refresh-'));
   const configDir = path.join(tempRoot, 'config');
   const sessionsDir = path.join(tempRoot, 'sessions');
   const logsDir = path.join(tempRoot, 'logs');
@@ -424,10 +424,10 @@ test('active terminal stays writable after terminal list refresh', async (t) => 
   const password = 'Terminal!234';
   const server = await startServer({
     PORT: String(port),
-    CC_WEB_PASSWORD: password,
-    CC_WEB_CONFIG_DIR: configDir,
-    CC_WEB_SESSIONS_DIR: sessionsDir,
-    CC_WEB_LOGS_DIR: logsDir,
+    SUPERTERMAL_PASSWORD: password,
+    SUPERTERMAL_CONFIG_DIR: configDir,
+    SUPERTERMAL_SESSIONS_DIR: sessionsDir,
+    SUPERTERMAL_LOGS_DIR: logsDir,
   });
 
   let ws;

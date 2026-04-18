@@ -1,161 +1,109 @@
-# CC-Web
+# SuperTermal
 
-CC-Web 是一个面向 `claude` 和 `codex` CLI 的浏览器端工作台。它把持久化终端、Agent 会话、远程主机接入、通知推送和本地历史导入整合到同一个 Node.js 服务里，适合在桌面或手机上远程接管本机或 VPS 的开发环境。
+![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-## 主要能力
+浏览器端 AI Agent 终端工作台 — 在网页里远程操控 Claude / Codex CLI。
 
-- 通过 WebSocket 连接浏览器和后端，在页面内运行持久化终端
-- 用 `tmux` 保持终端常驻，断开网页后任务仍可继续
-- 在同一套界面里切换 Claude / Codex 会话
-- 支持本地目录启动任务，也支持基于 SSH Host 启动远程任务
-- 支持图片附件上传、粘贴和拖拽
-- 支持导入 `~/.claude/projects/` 和 `~/.codex/sessions/` 中的本地历史
-- 支持 PushPlus、Telegram、Server 酱、飞书机器人、Qmsg 通知
-- 支持为通知生成 AI 摘要
-- 支持保存 GitHub Token、仓库列表和 SSH 主机信息
-- 提供登录密码、改密、会话失效和基础防暴力破解
+手机、平板、任意浏览器，随时接管你 VPS 上的开发环境。
 
-## 运行要求
+## 功能一览
 
-- Node.js 18 及以上
-- 已安装 `tmux`
-- 已安装 `claude` 和 / 或 `codex`，并且命令可直接执行
+- **持久化终端** — tmux 驱动，关掉网页任务照样跑
+- **多 Agent 工作台** — Claude / Codex 一键切换，会话完全隔离
+- **SSH 远程接入** — 保存 Host，密钥/密码认证，统一界面管理
+- **智能通知** — PushPlus、Telegram、飞书、Server酱、Qmsg 多渠道推送
+- **AI 摘要** — 任务完成自动生成摘要，推送到手机
+- **本地历史导入** — 读取 `~/.claude/projects/` 和 `~/.codex/sessions/` 的原生记录
+- **移动端适配** — 手机浏览器可用，自带方向键/ESC/CTRL 按键栏
+- **安全防护** — 登录密码、强制改密、会话失效、防暴力破解
 
-按需安装：
-
-- `sshpass`：只在 SSH Host 使用密码登录时需要
-- `sqlite3`：导入部分 Codex 本地历史时会尝试使用
-
-## 安装与启动
+## 快速部署
 
 ```bash
-git clone https://github.com/ZgDaniel/cc-web.git
-cd cc-web
+git clone https://github.com/Risingrode/supertermal.git
+cd supertermal
 npm install
 cp .env.example .env
 npm start
 ```
 
-默认访问地址：
+打开 http://localhost:8002 ，首次密码会自动写入 `.env`。
 
-```text
-http://localhost:8002
+### 用 PM2 常驻
+
+```bash
+npm i -g pm2
+pm2 start server.js --name supertermal
+pm2 save
 ```
 
-## 密码与 `.env`
+## 运行要求
 
-Web 登录密码现在以 `.env` 为唯一持久化来源。
+| 必需 | 可选 |
+| --- | --- |
+| Node.js 18+ | sshpass（SSH 密码登录） |
+| tmux | sqlite3（导入 Codex 历史） |
+| claude / codex CLI | |
 
-- `CC_WEB_PASSWORD`：当前 Web 登录密码
-- `CC_WEB_PASSWORD_MUST_CHANGE`：是否要求登录后立刻改密
-- 如果 `.env` 里没有 `CC_WEB_PASSWORD`，服务首次启动会自动生成随机密码，并回写到 `.env`
-- 如果存在旧版 `config/auth.json`，服务启动时会自动迁移到 `.env` 并删除旧文件
-- 在 Web 页面里修改密码后，后端会直接改写 `.env`
+## 环境变量
 
-当前仓库内的默认 `.env` 还支持这些变量：
+在 `.env` 中配置，首次启动会自动生成密码。
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CC_WEB_PASSWORD` | 空或现有值 | Web 登录密码 |
-| `CC_WEB_PASSWORD_MUST_CHANGE` | `false` | 是否强制首次改密 |
-| `PORT` | `8002` | HTTP / WebSocket 监听端口 |
-| `CLAUDE_PATH` | `claude` | Claude CLI 可执行路径 |
-| `CODEX_PATH` | `codex` | Codex CLI 可执行路径 |
-| `PUSHPLUS_TOKEN` | 空 | 首次启动时会迁移到通知配置 |
-| `CC_WEB_CONFIG_DIR` | `./config` | 配置目录覆写 |
-| `CC_WEB_SESSIONS_DIR` | `./sessions` | 会话目录覆写 |
-| `CC_WEB_LOGS_DIR` | `./logs` | 日志目录覆写 |
-| `CC_WEB_PUBLIC_DIR` | `./public` | 静态资源目录覆写 |
-| `CC_WEB_IP_WHITELIST` | 空 | 登录失败白名单 IP |
-| `CC_WEB_ENV_FILE` | `./.env` | `.env` 文件路径覆写，主要用于测试或隔离运行 |
-
-参考模板见 [`.env.example`](/home/cc-web/.env.example)。
+| `PORT` | `8002` | 监听端口 |
+| `SUPERTERMAL_PASSWORD` | 自动生成 | Web 登录密码 |
+| `SUPERTERMAL_PASSWORD_MUST_CHANGE` | `false` | 是否强制首次改密 |
+| `CLAUDE_PATH` | `claude` | Claude CLI 路径 |
+| `CODEX_PATH` | `codex` | Codex CLI 路径 |
+| `PUSHPLUS_TOKEN` | 空 | PushPlus 通知 Token |
+| `SUPERTERMAL_CONFIG_DIR` | `./config` | 配置目录 |
+| `SUPERTERMAL_SESSIONS_DIR` | `./sessions` | 会话目录 |
+| `SUPERTERMAL_LOGS_DIR` | `./logs` | 日志目录 |
+| `SUPERTERMAL_ENV_FILE` | `./.env` | .env 路径覆写 |
 
 ## 配置文件
 
-运行后会在 `config/` 下维护这些文件：
+运行后在 `config/` 下维护：
 
-- `notify.json`：通知渠道和 AI 摘要配置
-- `model.json`：Claude 模型模板配置
-- `codex.json`：Codex profile 和运行时配置
-- `dev.json`：GitHub Token、仓库列表、SSH Host 列表
-- `banned_ips.json`：登录失败触发的封禁记录
+- `notify.json` — 通知渠道和 AI 摘要配置
+- `codex.json` — Codex profile 和运行时配置
+- `dev.json` — GitHub Token、仓库列表、SSH Host 列表
+- `banned_ips.json` — 封禁记录
 
-注意：
-
-- GitHub Token 和 SSH Host 密码会保存在 `config/dev.json`
-- 登录密码不再写入 `config/auth.json`
-
-## 常用使用方式
-
-### 1. 浏览器终端
-
-- 左侧可管理终端和会话
-- 终端底层使用 `tmux`
-- 页面刷新、浏览器断开或重新登录后，可重新挂载已有终端
-- 移动端提供额外按键栏，方便发送方向键、`ESC`、`CTRL` 等按键
-
-### 2. Claude / Codex 工作台
-
-- 新建会话时可以选择 Agent、模型、权限模式和工作目录
-- Claude / Codex 的会话和设置彼此隔离
-- 可以直接导入本地原生历史
-- 页面会展示流式输出、工具调用和部分 token 统计
-
-### 3. 远程主机入口
-
-- 通过设置面板保存 SSH Host
-- 支持密钥认证和密码认证
-- 远程任务仍通过统一的 Web 界面管理
-
-### 4. 通知中心
-
-- 支持任务完成、异常、中断、压缩上下文等场景通知
-- AI 摘要支持使用 Claude、Codex 或自定义 OpenAI 兼容接口
+> 部署时注意：GitHub Token 和 SSH 密码保存在 `config/dev.json`，确保目录权限安全。
 
 ## 项目结构
 
-```text
-cc-web/
-├── server.js
+```
+supertermal/
+├── server.js               # HTTP / WebSocket 主服务
 ├── lib/
+│   ├── agent-runtime.js    # Claude / Codex 运行时封装
+│   ├── codex-rollouts.js   # Codex 本地历史解析
+│   ├── sqlite.js           # SQLite 支持
+│   └── terminal-manager.js # 终端生命周期管理
 ├── public/
-├── scripts/
-├── test/
-├── config/
-├── sessions/
-├── logs/
-├── .env
+│   ├── app.js              # 前端主逻辑
+│   ├── index.html          # 页面入口
+│   └── style.css           # 样式
+├── scripts/                # 模拟脚本和回归测试
+├── test/                   # 单元测试
+├── config/                 # 运行时配置
+├── .env                    # 环境变量
 └── package.json
 ```
 
-几个关键文件：
-
-- [`server.js`](/home/cc-web/server.js)：HTTP / WebSocket 服务、认证、终端、配置、通知主逻辑
-- [`lib/agent-runtime.js`](/home/cc-web/lib/agent-runtime.js)：Claude / Codex 运行时封装
-- [`lib/codex-rollouts.js`](/home/cc-web/lib/codex-rollouts.js)：Codex 本地 rollout 解析
-- [`public/app.js`](/home/cc-web/public/app.js)：前端主逻辑
-- [`public/style.css`](/home/cc-web/public/style.css)：界面样式
-
 ## 测试
-
-本地可运行：
 
 ```bash
 node --test test/*.test.js
 npm run regression
 ```
 
-目前仓库内的测试覆盖主要包括：
+覆盖范围：终端输入/挂载状态、终端持久化/重连、密码迁移、改密回写。
 
-- 终端输入与挂载状态
-- 终端持久化与重连
-- 密码迁移到 `.env`
-- 改密后回写 `.env`
+## License
 
-## 已知实现约束
-
-- 持久化终端依赖本机 `tmux`
-- SSH 密码登录依赖系统存在 `sshpass`
-- 登录密码在 `.env` 中明文存储，这是当前项目的设计选择
-- GitHub Token 和 SSH Host 密码保存在 `config/dev.json`，部署时应确保目录权限正确
+MIT

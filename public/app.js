@@ -7,7 +7,7 @@
 
   // Initialize global state for sharing with api.js
   window.ccState = {
-    authToken: localStorage.getItem('cc-web-token')
+    authToken: localStorage.getItem('supertermal-token')
   };
 
   function debounce(func, wait) {
@@ -24,7 +24,7 @@
 
   // --- State ---
   // ws, reconnectAttempts, reconnectTimer are now managed in js/api.js
-  let authToken = localStorage.getItem('cc-web-token');
+  let authToken = localStorage.getItem('supertermal-token');
   let currentSessionId = null;
   let sessions = [];
   let sessionCache = new Map();
@@ -38,8 +38,8 @@
   let cmdMenuIndex = -1;
   let currentMode = 'yolo';
   let currentModel = 'opus';
-  let currentAgent = AGENT_LABELS[localStorage.getItem('cc-web-agent')] ? localStorage.getItem('cc-web-agent') : DEFAULT_AGENT;
-  let currentTheme = (document.documentElement.dataset.theme || localStorage.getItem('cc-web-theme') || 'dark');
+  let currentAgent = AGENT_LABELS[localStorage.getItem('supertermal-agent')] ? localStorage.getItem('supertermal-agent') : DEFAULT_AGENT;
+  let currentTheme = (document.documentElement.dataset.theme || localStorage.getItem('supertermal-theme') || 'dark');
   let codexConfigCache = null;
   let loadedHistorySessionId = null;
   let activeSessionLoad = null;
@@ -49,14 +49,14 @@
 
   // --- Terminal state ---
   let terminals = new Map();       // termId -> { meta, term, fitAddon, wrapperEl, attached }
-  let activeTermId = localStorage.getItem('cc-web-active-terminal') || null;
+  let activeTermId = localStorage.getItem('supertermal-active-terminal') || null;
   let currentHosts = [{ id: 'local', name: '本机', type: 'local' }];
-  let currentHostId = localStorage.getItem('cc-web-active-host') || 'local';
+  let currentHostId = localStorage.getItem('supertermal-active-host') || 'local';
   let terminalListOpen = false;
   let loginPasswordValue = ''; // store login password for force-change flow
   let currentCwd = null;
   let currentSessionRunning = false;
-  let skipDeleteConfirm = localStorage.getItem('cc-web-skip-delete-confirm') === '1';
+  let skipDeleteConfirm = localStorage.getItem('supertermal-skip-delete-confirm') === '1';
   let pendingInitialSessionLoad = false;
   let syncTerminalState;
   let syncTerminalHosts;
@@ -204,7 +204,7 @@
   function applyTheme(theme) {
     currentTheme = normalizeTheme(theme);
     document.documentElement.dataset.theme = currentTheme;
-    localStorage.setItem('cc-web-theme', currentTheme);
+    localStorage.setItem('supertermal-theme', currentTheme);
     refreshThemeSummaries();
     // Update xterm theme colors for all existing terminals
     const xtermTheme = getXtermTheme();
@@ -575,11 +575,11 @@
   }
 
   function getAgentSessionStorageKey(agent) {
-    return `cc-web-session-${normalizeAgent(agent)}`;
+    return `supertermal-session-${normalizeAgent(agent)}`;
   }
 
   function getAgentModeStorageKey(agent) {
-    return `cc-web-mode-${normalizeAgent(agent)}`;
+    return `supertermal-mode-${normalizeAgent(agent)}`;
   }
 
   function getLastSessionForAgent(agent) {
@@ -588,7 +588,7 @@
 
   function setLastSessionForAgent(agent, sessionId) {
     localStorage.setItem(getAgentSessionStorageKey(agent), sessionId);
-    localStorage.setItem('cc-web-session', sessionId);
+    localStorage.setItem('supertermal-session', sessionId);
   }
 
   function getSessionMeta(sessionId) {
@@ -825,7 +825,7 @@
         resolve(authToken);
         return;
       }
-      const savedPassword = localStorage.getItem('cc-web-pw');
+      const savedPassword = localStorage.getItem('supertermal-pw');
       if (!savedPassword) {
         reject(new Error('登录状态已失效，请刷新页面后重新登录再上传图片。'));
         return;
@@ -836,8 +836,8 @@
 
       const cleanup = () => {
         clearTimeout(timeout);
-        document.removeEventListener('cc-web-auth-restored', onRestored);
-        document.removeEventListener('cc-web-auth-failed', onFailed);
+        document.removeEventListener('supertermal-auth-restored', onRestored);
+        document.removeEventListener('supertermal-auth-failed', onFailed);
       };
       const onRestored = () => {
         cleanup();
@@ -847,8 +847,8 @@
         cleanup();
         reject(new Error('登录状态已失效，请刷新页面后重新登录再上传图片。'));
       };
-      document.addEventListener('cc-web-auth-restored', onRestored);
-      document.addEventListener('cc-web-auth-failed', onFailed);
+      document.addEventListener('supertermal-auth-restored', onRestored);
+      document.addEventListener('supertermal-auth-failed', onFailed);
 
       if (!ccApi.ws || ccApi.ws.readyState > 1) {
         ccApi.connect();
@@ -1033,7 +1033,7 @@
 
   function setCurrentAgent(agent) {
     currentAgent = normalizeAgent(agent);
-    localStorage.setItem('cc-web-agent', currentAgent);
+    localStorage.setItem('supertermal-agent', currentAgent);
     currentMode = localStorage.getItem(getAgentModeStorageKey(currentAgent)) || 'yolo';
     modeSelect.value = currentMode;
     updateAgentScopedUI();
@@ -1376,8 +1376,8 @@
       case 'auth_result':
         if (msg.success) {
           authToken = msg.token;
-          localStorage.setItem('cc-web-token', msg.token);
-          document.dispatchEvent(new CustomEvent('cc-web-auth-restored'));
+          localStorage.setItem('supertermal-token', msg.token);
+          document.dispatchEvent(new CustomEvent('supertermal-auth-restored'));
           loginOverlay.hidden = true;
           app.hidden = false;
           ccApi.send({ type: 'get_dev_config' });
@@ -1390,8 +1390,8 @@
           }
         } else {
           authToken = null;
-          localStorage.removeItem('cc-web-token');
-          document.dispatchEvent(new CustomEvent('cc-web-auth-failed'));
+          localStorage.removeItem('supertermal-token');
+          document.dispatchEvent(new CustomEvent('supertermal-auth-failed'));
           loginOverlay.hidden = false;
           app.hidden = true;
           if (msg.banned) {
@@ -1429,7 +1429,7 @@
       case 'terminal_created':
         if (msg.terminal?.id) {
           activeTermId = msg.terminal.id;
-          localStorage.setItem('cc-web-active-terminal', activeTermId);
+          localStorage.setItem('supertermal-active-terminal', activeTermId);
         }
         break;
 
@@ -1637,7 +1637,7 @@
         currentHosts = normalizeHostsConfig(msg.config);
         if (!currentHosts.some((host) => host.id === currentHostId)) {
           currentHostId = 'local';
-          localStorage.setItem('cc-web-active-host', currentHostId);
+          localStorage.setItem('supertermal-active-host', currentHostId);
           ccApi.send({ type: 'list_terminals', hostId: currentHostId });
         }
         if (typeof syncTerminalHosts === 'function') syncTerminalHosts();
@@ -2416,7 +2416,7 @@
     box.querySelector('#del-confirm-ok').addEventListener('click', () => { close(); onConfirm(); });
     box.querySelector('#del-confirm-skip').addEventListener('click', () => {
       skipDeleteConfirm = true;
-      localStorage.setItem('cc-web-skip-delete-confirm', '1');
+      localStorage.setItem('supertermal-skip-delete-confirm', '1');
       close();
       onConfirm();
     });
@@ -3027,9 +3027,9 @@
     loginPasswordValue = pw;
     // Remember password
     if (rememberPw.checked) {
-      localStorage.setItem('cc-web-pw', pw);
+      localStorage.setItem('supertermal-pw', pw);
     } else {
-      localStorage.removeItem('cc-web-pw');
+      localStorage.removeItem('supertermal-pw');
     }
     ccApi.send({ type: 'auth', password: pw });
     // Request notification permission on first user interaction
@@ -3209,7 +3209,7 @@
       navigator.serviceWorker.ready.then((reg) => {
         reg.showNotification('超级终端', {
           body: `「${title}」任务完成`,
-          tag: 'cc-web-task',
+          tag: 'supertermal-task',
           renotify: true,
         });
       }).catch(() => {});
@@ -3688,7 +3688,7 @@
       submitBtn.disabled = true;
       statusEl.textContent = '正在修改...';
       statusEl.className = 'fc-status';
-      ccApi.send({ type: 'change_password', currentPassword: loginPasswordValue || localStorage.getItem('cc-web-pw') || '', newPassword: newPw });
+      ccApi.send({ type: 'change_password', currentPassword: loginPasswordValue || localStorage.getItem('supertermal-pw') || '', newPassword: newPw });
     });
 
     newPwInput.focus();
@@ -3721,11 +3721,11 @@
     if (msg.success) {
       // Update token
       authToken = msg.token;
-      localStorage.setItem('cc-web-token', msg.token);
+      localStorage.setItem('supertermal-token', msg.token);
       // Update remembered password
-      if (localStorage.getItem('cc-web-pw')) {
+      if (localStorage.getItem('supertermal-pw')) {
         // Clear old remembered password since it's changed
-        localStorage.removeItem('cc-web-pw');
+        localStorage.removeItem('supertermal-pw');
       }
 
       // If force-change overlay is open, close it and load sessions
@@ -3760,7 +3760,7 @@
   }
 
   // --- Recent CWD memory (localStorage) ---
-  const RECENT_CWD_KEY = 'cc-web-recent-cwds';
+  const RECENT_CWD_KEY = 'supertermal-recent-cwds';
   const RECENT_CWD_MAX = 5;
 
   function getRecentCwds() {
@@ -3781,7 +3781,7 @@
   // --- Pinned CWD helpers ---
   function getPinnedCwds(agent) {
     try {
-      const raw = localStorage.getItem('cc-web-pinned-cwds-' + agent);
+      const raw = localStorage.getItem('supertermal-pinned-cwds-' + agent);
       return raw ? JSON.parse(raw) : [];
     } catch { return []; }
   }
@@ -3792,12 +3792,12 @@
     if (list.includes(cwd)) return;
     list.unshift(cwd);
     if (list.length > 5) list = list.slice(0, 5);
-    try { localStorage.setItem('cc-web-pinned-cwds-' + agent, JSON.stringify(list)); } catch {}
+    try { localStorage.setItem('supertermal-pinned-cwds-' + agent, JSON.stringify(list)); } catch {}
   }
 
   function removePinnedCwd(agent, cwd) {
     let list = getPinnedCwds(agent).filter(p => p !== cwd);
-    try { localStorage.setItem('cc-web-pinned-cwds-' + agent, JSON.stringify(list)); } catch {}
+    try { localStorage.setItem('supertermal-pinned-cwds-' + agent, JSON.stringify(list)); } catch {}
   }
 
   // --- New Session Modal ---
@@ -4107,7 +4107,7 @@
             if (sess.alreadyImported) {
               if (!confirm('已导入过此会话，重新导入将覆盖已有内容。确认继续？')) return;
             } else {
-              if (!confirm('由于 cc-web 与本地 CLI 的逻辑不同，导入会话需要解析后方可展示，导入后将覆盖已有内容。确认继续？')) return;
+              if (!confirm('由于 supertermal 与本地 CLI 的逻辑不同，导入会话需要解析后方可展示，导入后将覆盖已有内容。确认继续？')) return;
             }
             close();
             ccApi.send({ type: 'import_native_session', sessionId: sess.sessionId, projectDir: group.dir });
@@ -4252,7 +4252,7 @@
   }
 
   // Restore remembered password
-  const savedPw = localStorage.getItem('cc-web-pw');
+  const savedPw = localStorage.getItem('supertermal-pw');
   if (savedPw) {
     loginPassword.value = savedPw;
     rememberPw.checked = true;
@@ -4357,8 +4357,8 @@
       if (activeTermId) detachTerminal(activeTermId);
       currentHostId = nextHostId;
       activeTermId = null;
-      localStorage.setItem('cc-web-active-host', currentHostId);
-      localStorage.removeItem('cc-web-active-terminal');
+      localStorage.setItem('supertermal-active-host', currentHostId);
+      localStorage.removeItem('supertermal-active-terminal');
       renderHostList();
       closeTerminalDrawer();
       if (ccApi.ws && ccApi.ws.readyState === 1) {
@@ -4559,7 +4559,7 @@
       if (!terminalList) return;
       terminalList.innerHTML = '';
 
-      const savedOrder = JSON.parse(localStorage.getItem('cc-web-terminal-order') || '[]');
+      const savedOrder = JSON.parse(localStorage.getItem('supertermal-terminal-order') || '[]');
       const sortedIds = Array.from(terminals.keys()).sort((a, b) => {
         const indexA = savedOrder.indexOf(a);
         const indexB = savedOrder.indexOf(b);
@@ -4634,7 +4634,7 @@
           e.preventDefault();
           const order = Array.from(terminalList.querySelectorAll('.terminal-list-item'))
             .map(el => el.dataset.termId);
-          localStorage.setItem('cc-web-terminal-order', JSON.stringify(order));
+          localStorage.setItem('supertermal-terminal-order', JSON.stringify(order));
           renderTerminalList();
         });
 
@@ -4666,7 +4666,7 @@
     function switchTerminal(termId) {
       if (!terminals.has(termId)) return;
       activeTermId = termId;
-      localStorage.setItem('cc-web-active-terminal', termId);
+      localStorage.setItem('supertermal-active-terminal', termId);
 
       ensureTerminalInstance(termId);
       renderTerminalList();
@@ -4704,11 +4704,11 @@
 
       if (activeTermId && !terminals.has(activeTermId)) {
         activeTermId = null;
-        localStorage.removeItem('cc-web-active-terminal');
+        localStorage.removeItem('supertermal-active-terminal');
       }
       if (!activeTermId && terminals.size > 0) {
         activeTermId = terminals.keys().next().value;
-        localStorage.setItem('cc-web-active-terminal', activeTermId);
+        localStorage.setItem('supertermal-active-terminal', activeTermId);
       }
 
       renderTerminalList();
