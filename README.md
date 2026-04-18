@@ -11,7 +11,7 @@ Vibe产物，readme比较絮叨，建议直接丢给CC，拷打一番就好。
 
 ## 一键部署：claude
 ```
-https://github.com/ZgDaniel/cc-web 给我装！
+https://github.com/Risingrode/supertermal 给我装！
 ```
 
 
@@ -45,8 +45,8 @@ https://github.com/ZgDaniel/cc-web 给我装！
 ### Linux / macOS
 
 ```bash
-git clone https://github.com/ZgDaniel/cc-web.git
-cd cc-web
+git clone https://github.com/Risingrode/supertermal.git
+cd supertermal
 npm install
 cp .env.example .env    # 可选，不设密码则首次启动自动生成
 npm start
@@ -55,8 +55,8 @@ npm start
 ### Windows
 
 ```cmd
-git clone https://github.com/ZgDaniel/cc-web.git
-cd cc-web
+git clone https://github.com/Risingrode/supertermal.git
+cd supertermal
 npm install
 copy .env.example .env  & REM 可选
 ```
@@ -108,7 +108,7 @@ copy .env.example .env  & REM 可选
 ## 项目结构
 
 ```
-cc-web/
+supertermal/
 ├── server.js              # Node.js 后端（HTTP + WebSocket + 进程管理 + 通知）
 ├── lib/
 │   ├── agent-runtime.js    # Claude / Codex 运行时适配层
@@ -190,7 +190,7 @@ After=network.target
 [Service]
 Type=simple
 User=your-user
-WorkingDirectory=/path/to/cc-web
+WorkingDirectory=/path/to/supertermal
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=5
@@ -241,7 +241,7 @@ server {
 
 **启动方式**：双击 `start.bat`，或在终端运行：
 ```cmd
-cd cc-web
+cd supertermal
 npm install
 node server.js
 ```
