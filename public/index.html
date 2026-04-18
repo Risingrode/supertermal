@@ -139,10 +139,14 @@
         <div class="terminal-toolbar">
           <button id="terminal-list-toggle-btn" class="terminal-list-toggle-btn" title="终端列表">☰</button>
           <div class="terminal-toolbar-copy">
-            <div id="terminal-current-title" class="terminal-current-title">无终端</div>
-            <div id="terminal-current-meta" class="terminal-current-meta">创建一个持久化终端开始使用</div>
+            <div id="terminal-current-title" class="terminal-current-title">终端分屏</div>
+            <div id="terminal-current-meta" class="terminal-current-meta">点击侧边栏终端可加入当前分屏</div>
           </div>
           <span class="terminal-toolbar-spacer"></span>
+          <div class="terminal-layout-controls">
+            <button id="layout-single-btn" class="layout-btn" title="单窗格">渲染1</button>
+            <button id="layout-grid-btn" class="layout-btn active" title="自动分屏">渲染4</button>
+          </div>
           <button id="terminal-settings-btn" class="terminal-settings-btn" title="设置">⚙</button>
         </div>
         <div id="terminal-empty-state" class="terminal-empty-state" hidden>

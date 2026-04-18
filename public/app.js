@@ -4379,10 +4379,34 @@
       if (terminalSidebarOverlay) terminalSidebarOverlay.hidden = false;
     }
 
+    let terminalLayout = 'grid'; // 'single' or 'grid'
+
+    function setLayoutMode(mode) {
+      terminalLayout = mode;
+      if (terminalContainer) {
+        terminalContainer.dataset.layout = mode;
+      }
+      const singleBtn = document.getElementById('layout-single-btn');
+      const gridBtn = document.getElementById('layout-grid-btn');
+      if (singleBtn) singleBtn.classList.toggle('active', mode === 'single');
+      if (gridBtn) gridBtn.classList.toggle('active', mode === 'grid');
+
+      // Refresh all sizes
+      for (const [termId, entry] of terminals.entries()) {
+        if (entry?.fitAddon) {
+          requestAnimationFrame(() => entry.fitAddon.fit());
+        }
+      }
+    }
+
     function ensureTerminalInstance(termId) {
       const entry = terminals.get(termId);
       if (!entry) return null;
-      if (entry.term && entry.fitAddon && entry.wrapperEl) return entry;
+      if (entry.term && entry.fitAddon && entry.wrapperEl) {
+        const titleEl = entry.wrapperEl.querySelector('.terminal-pane-title');
+        if (titleEl) titleEl.textContent = entry.meta?.title || '终端';
+        return entry;
+      }
 
       const Terminal = window.Terminal;
       const FitAddon = window.FitAddon?.FitAddon || window.FitAddon;
@@ -4394,6 +4418,23 @@
       const wrapper = document.createElement('div');
       wrapper.className = 'terminal-wrapper';
       wrapper.dataset.termId = termId;
+
+      // Header
+      const header = document.createElement('div');
+      header.className = 'terminal-pane-header';
+      header.innerHTML = `
+        <span class="terminal-pane-title">${escapeHtml(entry.meta?.title || '终端')}</span>
+        <div class="terminal-pane-actions">
+          <button class="terminal-pane-btn" data-pane-action="maximize" title="全屏/分屏">⇱</button>
+          <button class="terminal-pane-btn" data-pane-action="close" title="关闭">×</button>
+        </div>
+      `;
+      wrapper.appendChild(header);
+
+      const inner = document.createElement('div');
+      inner.className = 'terminal-inner';
+      wrapper.appendChild(inner);
+
       terminalContainer.appendChild(wrapper);
 
       const term = new Terminal({
@@ -4418,7 +4459,7 @@
         }
       }
 
-      term.open(wrapper);
+      term.open(inner);
 
       if (isMobileDevice()) {
         term.element?.addEventListener('click', () => {
@@ -4437,6 +4478,20 @@
           term.focus();
         }
       }, true);
+
+      // Pane actions
+      header.addEventListener('click', (e) => {
+        const actionBtn = e.target.closest('[data-pane-action]');
+        if (!actionBtn) return;
+        const action = actionBtn.dataset.paneAction;
+        if (action === 'maximize') {
+          setLayoutMode(terminalLayout === 'single' ? 'grid' : 'single');
+        } else if (action === 'close') {
+          if (window.confirm(`关闭 ${entry.meta?.title || '该终端'}？`)) {
+            ccApi.send({ type: 'terminal_close', termId });
+          }
+        }
+      });
 
       term.onData((data) => {
         const current = terminals.get(termId);
@@ -4592,6 +4647,7 @@
     function revealTerminal(termId) {
       if (!terminalContainer) return;
       terminalContainer.dataset.count = terminals.size;
+      terminalContainer.dataset.layout = terminalLayout;
 
       for (const [id, entry] of terminals.entries()) {
         if (entry.wrapperEl) {
@@ -4609,9 +4665,6 @@
 
     function switchTerminal(termId) {
       if (!terminals.has(termId)) return;
-      const previousId = activeTermId;
-      // if (previousId && previousId !== termId) detachTerminal(previousId); // Keep all attached for split view
-
       activeTermId = termId;
       localStorage.setItem('cc-web-active-terminal', termId);
 
@@ -4691,6 +4744,11 @@
         ccApi.send({ type: 'terminal_create', hostId: currentHostId, cwd: currentCwd || undefined });
       });
     }
+
+    const layoutSingleBtn = document.getElementById('layout-single-btn');
+    const layoutGridBtn = document.getElementById('layout-grid-btn');
+    if (layoutSingleBtn) layoutSingleBtn.addEventListener('click', () => setLayoutMode('single'));
+    if (layoutGridBtn) layoutGridBtn.addEventListener('click', () => setLayoutMode('grid'));
 
     if (terminalSettingsBtn) {
       terminalSettingsBtn.addEventListener('click', showSettingsPanel);
