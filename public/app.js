@@ -2,100 +2,34 @@
 (function () {
   'use strict';
 
-  const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
-  const RENDER_DEBOUNCE = 100;
+  // Constants (WS_URL, SLASH_COMMANDS, etc.) are now in js/constants.js
+  // WebSocket API is in js/api.js
 
-  const SLASH_COMMANDS = [
-    { cmd: '/clear', desc: '清除当前会话' },
-    { cmd: '/model', desc: '查看/切换模型' },
-    { cmd: '/mode', desc: '查看/切换权限模式' },
-    { cmd: '/cost', desc: '查看会话费用' },
-    { cmd: '/compact', desc: '压缩上下文' },
-    { cmd: '/init', desc: '生成/更新 Agent 指南文件' },
-    { cmd: '/github', desc: 'GitHub 操作（读取开发者配置后执行）' },
-    { cmd: '/ssh', desc: 'SSH 远程操作（读取开发者配置后执行）' },
-    { cmd: '/help', desc: '显示帮助' },
-  ];
-
-  const MODE_LABELS = {
-    default: '默认',
-    plan: 'Plan',
-    yolo: 'YOLO',
+  // Initialize global state for sharing with api.js
+  window.ccState = {
+    authToken: localStorage.getItem('cc-web-token')
   };
 
-  const AGENT_LABELS = {
-    claude: 'Claude',
-    codex: 'Codex',
-  };
-
-  const DEFAULT_AGENT = 'claude';
-  const SESSION_CACHE_LIMIT = 4;
-  const SESSION_CACHE_MAX_WEIGHT = 1_500_000;
-  const SIDEBAR_SWIPE_TRIGGER = 72;
-  const SIDEBAR_SWIPE_MAX_VERTICAL_DRIFT = 42;
-
-  const MODEL_OPTIONS = [
-    { value: 'opus', label: 'Opus', desc: '最强大，1M 上下文' },
-    { value: 'sonnet', label: 'Sonnet', desc: '平衡性能，1M 上下文' },
-    { value: 'haiku', label: 'Haiku', desc: '最快速，适合简单任务' },
-  ];
-
-	  const DEFAULT_CODEX_MODEL_OPTIONS = [
-	    { value: 'gpt-5.4', label: 'GPT-5.4', desc: '当前主力 Codex 模型' },
-	    { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', desc: '偏工程执行场景' },
-	    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', desc: '兼容旧路由与旧配置' },
-	    { value: 'gpt-5.2', label: 'GPT-5.2', desc: '通用 OpenAI 兼容模型' },
-	  ];
-
-  const MODE_PICKER_OPTIONS = [
-    { value: 'yolo', label: 'YOLO', desc: '跳过所有权限检查' },
-    { value: 'plan', label: 'Plan', desc: '执行前需确认计划' },
-    { value: 'default', label: '默认', desc: '标准权限审批' },
-  ];
-
-  const THEME_OPTIONS = [
-    {
-      value: 'dark',
-      label: 'Midnight Core',
-      desc: '保留的主黑色主题，偏深夜工程台风格。',
-      swatches: ['#1a1b26', '#16161e', '#7aa2f7', '#9ece6a'],
-    },
-    {
-      value: 'okx',
-      label: 'Carbon Ledger',
-      desc: 'OKX 风格的冷黑高对比工作台，强调纯白与秩序感。',
-      swatches: ['#0b0b0c', '#141416', '#ffffff', '#8b8b93'],
-    },
-    {
-      value: 'binance',
-      label: 'Signal Market',
-      desc: '币安风格的深炭底色与交易黄强调，更偏盘面工具感。',
-      swatches: ['#181a20', '#1f2229', '#f0b90b', '#f8d66d'],
-    },
-    {
-      value: 'flomo',
-      label: 'Soft Memo',
-      desc: 'flomo 风格的轻纸感和高可读暖调，像便签墙一样轻盈。',
-      swatches: ['#fbf6e9', '#f5edd6', '#ff6b57', '#2f7f68'],
-    },
-    {
-      value: 'github',
-      label: 'Repository Day',
-      desc: 'GitHub 白色主题取向，干净、克制、适合长时间查看。',
-      swatches: ['#ffffff', '#f6f8fa', '#0969da', '#24292f'],
-    },
-  ];
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
 
   // --- State ---
-  let ws = null;
+  // ws, reconnectAttempts, reconnectTimer are now managed in js/api.js
   let authToken = localStorage.getItem('cc-web-token');
   let currentSessionId = null;
   let sessions = [];
   let sessionCache = new Map();
   let isGenerating = false;
   let queuedMessage = null;  // message queued while isGenerating
-  let reconnectAttempts = 0;
-  let reconnectTimer = null;
   let pendingText = '';
   let renderTimer = null;
   let activeToolCalls = new Map();
@@ -183,7 +117,7 @@
     document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
   }
   setVH();
-  window.addEventListener('resize', setVH);
+  window.addEventListener('resize', debounce(setVH, 100));
   window.addEventListener('orientationchange', () => setTimeout(setVH, 100));
 
   function buildWelcomeMarkup(agent) {
@@ -341,8 +275,7 @@
   }
 
   function openNotifySubpage() {
-    send({ type: 'get_notify_config' });
-
+    ccApi.ccApi.send({ type: 'get_notify_config' });
     const overlay = document.createElement('div');
     overlay.className = 'settings-overlay settings-subpage-overlay';
     overlay.style.zIndex = '10001';
@@ -427,14 +360,14 @@
 
     testBtn.addEventListener('click', () => {
       const config = collectConfig();
-      send({ type: 'save_notify_config', config });
+      ccApi.send({ type: 'save_notify_config', config });
       showStatus('正在发送测试消息...', '');
-      send({ type: 'test_notify' });
+      ccApi.send({ type: 'test_notify' });
     });
 
     saveBtn.addEventListener('click', () => {
       const config = collectConfig();
-      send({ type: 'save_notify_config', config });
+      ccApi.send({ type: 'save_notify_config', config });
       refreshParentSummary(config);
       showStatus('已保存', 'success');
     });
@@ -450,7 +383,7 @@
   }
 
   function openDevSettingsSubpage() {
-    send({ type: 'get_dev_config' });
+    ccApi.send({ type: 'get_dev_config' });
     const overlay = document.createElement('div');
     overlay.className = 'settings-overlay settings-subpage-overlay';
     overlay.id = 'dev-settings-subpage';
@@ -589,7 +522,7 @@
     panel.querySelector('#dev-host-add').addEventListener('click', () => openHostEditModal());
 
     panel.querySelector('#dev-save-btn').addEventListener('click', () => {
-      send({
+      ccApi.send({
         type: 'save_dev_config',
         config: {
           github: { token: '', repos: [] },
@@ -888,7 +821,7 @@
 
   function ensureAuthenticatedWs() {
     return new Promise((resolve, reject) => {
-      if (ws && ws.readyState === 1 && authToken) {
+      if (ccApi.ws && ccApi.ws.readyState === 1 && authToken) {
         resolve(authToken);
         return;
       }
@@ -917,10 +850,10 @@
       document.addEventListener('cc-web-auth-restored', onRestored);
       document.addEventListener('cc-web-auth-failed', onFailed);
 
-      if (!ws || ws.readyState > 1) {
-        connect();
-      } else if (ws.readyState === 1) {
-        send({ type: 'auth', password: savedPassword });
+      if (!ccApi.ws || ccApi.ws.readyState > 1) {
+        ccApi.connect();
+      } else if (ccApi.ws.readyState === 1) {
+        ccApi.send({ type: 'auth', password: savedPassword });
       }
     });
   }
@@ -1191,7 +1124,7 @@
     }
 
     if (currentSessionId && (!currentMeta || normalizeAgent(currentMeta.agent) !== targetAgent)) {
-      send({ type: 'detach_view' });
+      ccApi.send({ type: 'detach_view' });
     }
 
     resetChatView(targetAgent);
@@ -1265,14 +1198,14 @@
     renderEpoch++;
     loadedHistorySessionId = null;
     setSessionLoading(sessionId, { blocking, label: options.label });
-    send({ type: 'load_session', sessionId });
+    ccApi.send({ type: 'load_session', sessionId });
   }
 
   function showCachedSession(sessionId) {
     const snapshot = buildCachedSessionSnapshot(sessionId);
     if (!snapshot) return false;
     if (currentSessionId && currentSessionId !== sessionId) {
-      send({ type: 'detach_view' });
+      ccApi.send({ type: 'detach_view' });
     }
     clearSessionLoading();
     touchSessionCache(sessionId);
@@ -1424,46 +1357,18 @@
     }
   };
 
-  // --- WebSocket ---
-  function connect() {
-    if (ws && ws.readyState <= 1) return;
-    ws = new WebSocket(WS_URL);
+  // --- WebSocket bridging ---
+  window.handleServerMessage = function (msg) {
+    handleServerMessage(msg);
+  };
 
-    ws.onopen = () => {
-      reconnectAttempts = 0;
-      if (authToken) send({ type: 'auth', token: authToken });
-    };
-
-    ws.onmessage = (e) => {
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
-      handleServerMessage(msg);
-    };
-
-    ws.onclose = () => {
-      clearSessionLoading();
-      for (const t of terminals.values()) {
-        t.attached = false;
-        if (t.term) t.term.write('\r\n\x1b[33m[连接断开，重连后自动恢复]\x1b[0m\r\n');
-      }
-      scheduleReconnect();
-    };
-    ws.onerror = () => {};
-  }
-
-  function send(data) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
-  }
-
-  function scheduleReconnect() {
-    if (reconnectTimer) return;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-    reconnectAttempts++;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      connect();
-    }, delay);
-  }
+  window.onWsClose = function () {
+    clearSessionLoading();
+    for (const t of terminals.values()) {
+      t.attached = false;
+      if (t.term) t.term.write('\r\n\x1b[33m[连接断开，重连后自动恢复]\x1b[0m\r\n');
+    }
+  };
 
   // --- Server Message Handler ---
   function handleServerMessage(msg) {
@@ -1475,8 +1380,8 @@
           document.dispatchEvent(new CustomEvent('cc-web-auth-restored'));
           loginOverlay.hidden = true;
           app.hidden = false;
-          send({ type: 'get_dev_config' });
-          send({ type: 'list_terminals', hostId: currentHostId });
+          ccApi.send({ type: 'get_dev_config' });
+          ccApi.send({ type: 'list_terminals', hostId: currentHostId });
           // Check if must change password
           if (msg.mustChangePassword) {
             showForceChangePassword();
@@ -1533,8 +1438,8 @@
           const t = terminals.get(msg.termId);
           if (t) {
             const pendingInput = markTerminalAttachedState(t);
-            if (pendingInput && ws && ws.readyState === 1) {
-              send({ type: 'terminal_input', termId: msg.termId, data: pendingInput });
+            if (pendingInput && ccApi.ws && ccApi.ws.readyState === 1) {
+              ccApi.send({ type: 'terminal_input', termId: msg.termId, data: pendingInput });
             }
           }
         }
@@ -1733,7 +1638,7 @@
         if (!currentHosts.some((host) => host.id === currentHostId)) {
           currentHostId = 'local';
           localStorage.setItem('cc-web-active-host', currentHostId);
-          send({ type: 'list_terminals', hostId: currentHostId });
+          ccApi.send({ type: 'list_terminals', hostId: currentHostId });
         }
         if (typeof syncTerminalHosts === 'function') syncTerminalHosts();
         if (typeof _onDevConfig === 'function') _onDevConfig(msg.config);
@@ -1751,7 +1656,7 @@
           // Reload current session to show completed response
           openSession(msg.sessionId, { forceSync: true, blocking: false });
         } else {
-          send({ type: 'list_sessions' });
+          ccApi.send({ type: 'list_sessions' });
         }
         break;
 
@@ -1840,13 +1745,13 @@
     if (queuedMessage) {
       const q = queuedMessage;
       // Send directly via WS — don't touch msgInput.value (user may be typing)
-      if (ws && ws.readyState === 1) {
+      if (ccApi.ws && ccApi.ws.readyState === 1) {
         queuedMessage = null;  // only clear after confirming WS is open
         const welcome = messagesDiv.querySelector('.welcome-msg');
         if (welcome) welcome.remove();
         messagesDiv.appendChild(createMsgElement('user', q.text, q.attachments || []));
         scrollToBottom();
-        send({ type: 'message', text: q.text, attachments: q.attachments, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
+        ccApi.send({ type: 'message', text: q.text, attachments: q.attachments, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
         startGenerating();
       }
       // else: keep queuedMessage for next finishGenerating or reconnect
@@ -2649,7 +2554,7 @@
               localStorage.removeItem(getAgentSessionStorageKey(currentAgent));
             }
             invalidateSessionCache(s.id);
-            send({ type: 'delete_session', sessionId: s.id });
+            ccApi.send({ type: 'delete_session', sessionId: s.id });
             if (s.id === currentSessionId) {
               resetChatView(currentAgent);
             }
@@ -2694,7 +2599,7 @@
     function save() {
       const newTitle = input.value.trim() || currentTitle;
       if (newTitle !== currentTitle) {
-        send({ type: 'rename_session', sessionId: session.id, title: newTitle });
+        ccApi.send({ type: 'rename_session', sessionId: session.id, title: newTitle });
       }
       // Restore
       const span = document.createElement('span');
@@ -2752,7 +2657,7 @@
       const newTitle = chatTitle.textContent.trim() || originalText;
       chatTitle.textContent = newTitle;
       if (save && newTitle !== originalText && currentSessionId) {
-        send({ type: 'rename_session', sessionId: currentSessionId, title: newTitle });
+        ccApi.send({ type: 'rename_session', sessionId: currentSessionId, title: newTitle });
       }
     }
 
@@ -3004,13 +2909,13 @@
 	        showOptionPicker('选择 Thinking 强度', thinkingOptions, current.level || '', (lvl) => {
 	          const level = String(lvl || '').trim().toLowerCase();
 	          const full = level ? `${base}(${level})` : base;
-	          send({ type: 'message', text: `/model ${full}`, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
+	          ccApi.send({ type: 'message', text: `/model ${full}`, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
 	        });
 	      });
 	      return;
 	    }
 	    showOptionPicker('选择模型', MODEL_OPTIONS, currentModel, (value) => {
-	      send({ type: 'message', text: `/model ${value}`, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
+	      ccApi.send({ type: 'message', text: `/model ${value}`, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
     });
   }
 
@@ -3020,7 +2925,7 @@
       modeSelect.value = currentMode;
       localStorage.setItem(getAgentModeStorageKey(currentAgent), currentMode);
       if (currentSessionId) {
-        send({ type: 'set_mode', sessionId: currentSessionId, mode: currentMode });
+        ccApi.send({ type: 'set_mode', sessionId: currentSessionId, mode: currentMode });
       }
     });
   }
@@ -3069,18 +2974,18 @@
         return;
       }
       // Check WS connection before sending slash commands
-      if (!ws || ws.readyState !== 1) {
+      if (!ccApi.ws || ccApi.ws.readyState !== 1) {
         appendError('连接已断开，请等待重新连接后重试。');
         return;
       }
-      send({ type: 'message', text, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
+      ccApi.send({ type: 'message', text, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
       msgInput.value = '';
       autoResize();
       return;
     }
 
     // Regular message
-    if (!ws || ws.readyState !== 1) {
+    if (!ccApi.ws || ccApi.ws.readyState !== 1) {
       appendError('连接已断开，请等待重新连接后重试。');
       return;
     }
@@ -3090,7 +2995,7 @@
     messagesDiv.appendChild(createMsgElement('user', text, attachments));
     scrollToBottom();
 
-    send({ type: 'message', text, attachments, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
+    ccApi.send({ type: 'message', text, attachments, sessionId: currentSessionId, mode: currentMode, agent: currentAgent });
     msgInput.value = '';
     pendingAttachments = [];
     renderPendingAttachments();
@@ -3098,10 +3003,15 @@
     startGenerating();
   }
 
+  let _autoResizeTimer;
   function autoResize() {
-    msgInput.style.height = 'auto';
-    const max = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--input-max-height')) || 200;
-    msgInput.style.height = Math.min(msgInput.scrollHeight, max) + 'px';
+    if (_autoResizeTimer) return;
+    _autoResizeTimer = requestAnimationFrame(() => {
+      _autoResizeTimer = null;
+      msgInput.style.height = 'auto';
+      const max = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--input-max-height')) || 200;
+      msgInput.style.height = Math.min(msgInput.scrollHeight, max) + 'px';
+    });
   }
 
   function isMobileInputMode() {
@@ -3121,7 +3031,7 @@
     } else {
       localStorage.removeItem('cc-web-pw');
     }
-    send({ type: 'auth', password: pw });
+    ccApi.send({ type: 'auth', password: pw });
     // Request notification permission on first user interaction
     requestNotificationPermission();
   });
@@ -3179,7 +3089,7 @@
     }
   });
   sendBtn.addEventListener('click', sendMessage);
-  abortBtn.addEventListener('click', () => send({ type: 'abort' }));
+  abortBtn.addEventListener('click', () => ccApi.send({ type: 'abort' }));
   if (attachBtn && imageUploadInput) {
     attachBtn.addEventListener('click', () => imageUploadInput.click());
     imageUploadInput.addEventListener('change', () => {
@@ -3208,7 +3118,7 @@
     currentMode = modeSelect.value;
     localStorage.setItem(getAgentModeStorageKey(currentAgent), currentMode);
     if (currentSessionId) {
-      send({ type: 'set_mode', sessionId: currentSessionId, mode: currentMode });
+      ccApi.send({ type: 'set_mode', sessionId: currentSessionId, mode: currentMode });
     }
     if (currentMode === 'default') {
       appendSystemMessage('⚠ 由于项目设计与 CLI 原生逻辑不同，默认模式的授权申请功能暂未实现，建议搭配 Plan 或 YOLO 模式使用。');
@@ -3587,14 +3497,14 @@
           submitBtn.disabled = false;
         }
       };
-      send({ type: 'change_password', currentPassword: currentPw, newPassword: newPw });
+      ccApi.send({ type: 'change_password', currentPassword: currentPw, newPassword: newPw });
     });
 
     currentPwIn.focus();
   }
 
   function showSettingsPanel() {
-    send({ type: 'get_dev_config' });
+    ccApi.send({ type: 'get_dev_config' });
 
     const overlay = document.createElement('div');
     overlay.className = 'settings-overlay';
@@ -3666,7 +3576,7 @@
           updateStatusEl.className = 'settings-status success';
         }
       };
-      send({ type: 'check_update' });
+      ccApi.send({ type: 'check_update' });
     });
 
     // Wire _onUpdateInfo into WS handler via closure
@@ -3701,6 +3611,15 @@
 
   if (settingsBtn) {
     settingsBtn.addEventListener('click', showSettingsPanel);
+
+    const themeBtn = $('#theme-btn');
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const themeIndex = THEME_OPTIONS.findIndex((t) => t.value === currentTheme);
+        const nextTheme = THEME_OPTIONS[(themeIndex + 1) % THEME_OPTIONS.length].value;
+        applyTheme(nextTheme);
+      });
+    }
   }
 
   // --- Force Change Password ---
@@ -3769,7 +3688,7 @@
       submitBtn.disabled = true;
       statusEl.textContent = '正在修改...';
       statusEl.className = 'fc-status';
-      send({ type: 'change_password', currentPassword: loginPasswordValue || localStorage.getItem('cc-web-pw') || '', newPassword: newPw });
+      ccApi.send({ type: 'change_password', currentPassword: loginPasswordValue || localStorage.getItem('cc-web-pw') || '', newPassword: newPw });
     });
 
     newPwInput.focus();
@@ -4035,7 +3954,7 @@
     // Fetch dev config for SSH hosts
     let sshHosts = [];
     const prevOnDevConfig = _onDevConfig;
-    send({ type: 'get_dev_config' });
+    ccApi.send({ type: 'get_dev_config' });
     _onDevConfig = (config) => {
       sshHosts = config.ssh?.hosts || [];
       renderRemoteView();
@@ -4101,7 +4020,7 @@
         }
         close();
         saveRecentCwd(cwd);
-        send({ type: 'new_session', cwd, agent: targetAgent, mode: currentMode, taskMode: 'local' });
+        ccApi.send({ type: 'new_session', cwd, agent: targetAgent, mode: currentMode, taskMode: 'local' });
       } else {
         // Remote task
         if (!selectedHostId) {
@@ -4110,7 +4029,7 @@
         }
         const remoteCwd = remoteView.querySelector('#ns-remote-cwd')?.value?.trim() || '';
         close();
-        send({ type: 'new_session', agent: targetAgent, mode: currentMode, taskMode: 'remote', sshHostId: selectedHostId, remoteCwd });
+        ccApi.send({ type: 'new_session', agent: targetAgent, mode: currentMode, taskMode: 'remote', sshHostId: selectedHostId, remoteCwd });
       }
     });
   }
@@ -4191,7 +4110,7 @@
               if (!confirm('由于 cc-web 与本地 CLI 的逻辑不同，导入会话需要解析后方可展示，导入后将覆盖已有内容。确认继续？')) return;
             }
             close();
-            send({ type: 'import_native_session', sessionId: sess.sessionId, projectDir: group.dir });
+            ccApi.send({ type: 'import_native_session', sessionId: sess.sessionId, projectDir: group.dir });
           });
           item.appendChild(info);
           item.appendChild(btn);
@@ -4201,7 +4120,7 @@
       }
     };
 
-    send({ type: 'list_native_sessions' });
+    ccApi.send({ type: 'list_native_sessions' });
   }
 
   function showImportCodexSessionModal() {
@@ -4289,7 +4208,7 @@
             : confirm('将解析本地 Codex rollout 历史并导入当前 Web 视图。确认继续？');
           if (!confirmed) return;
           close();
-          send({ type: 'import_codex_session', threadId: sess.threadId, rolloutPath: sess.rolloutPath });
+          ccApi.send({ type: 'import_codex_session', threadId: sess.threadId, rolloutPath: sess.rolloutPath });
         });
 
         item.appendChild(info);
@@ -4298,7 +4217,7 @@
       });
     };
 
-    send({ type: 'list_codex_sessions' });
+    ccApi.send({ type: 'list_codex_sessions' });
   }
 
   // --- Helpers ---
@@ -4324,7 +4243,7 @@
   applyTheme(currentTheme);
   setCurrentAgent(currentAgent);
   renderSessionList();
-  connect();
+  ccApi.connect();
   window.addEventListener('resize', updateCwdBadge);
 
   // Register Service Worker for mobile push notifications
@@ -4342,13 +4261,13 @@
   // Visibility change: re-sync state when user returns to tab (critical for mobile)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
-    if (!ws || ws.readyState > 1) {
+    if (!ccApi.ws || ccApi.ws.readyState > 1) {
       // WS is dead, force reconnect
-      connect();
-    } else if (ws.readyState === 1 && currentSessionId) {
+      ccApi.connect();
+    } else if (ccApi.ws.readyState === 1 && currentSessionId) {
       // Preserve active streaming UI when returning to foreground.
       if (isGenerating || currentSessionRunning) {
-        send({ type: 'load_session', sessionId: currentSessionId });
+        ccApi.send({ type: 'load_session', sessionId: currentSessionId });
       } else {
         beginSessionSwitch(currentSessionId, { blocking: false, force: true });
       }
@@ -4442,8 +4361,8 @@
       localStorage.removeItem('cc-web-active-terminal');
       renderHostList();
       closeTerminalDrawer();
-      if (ws && ws.readyState === 1) {
-        send({ type: 'list_terminals', hostId: currentHostId });
+      if (ccApi.ws && ccApi.ws.readyState === 1) {
+        ccApi.send({ type: 'list_terminals', hostId: currentHostId });
       }
     }
 
@@ -4489,6 +4408,17 @@
       term.attachCustomKeyEventHandler((event) => !shouldIgnoreTerminalKeyEvent(event));
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
+
+      if (window.WebglAddon) {
+        try {
+          const webglAddon = new window.WebglAddon.WebglAddon();
+          webglAddon.onContextLoss(() => webglAddon.dispose());
+          term.loadAddon(webglAddon);
+        } catch (e) {
+          console.warn('WebGL addon failed to load, falling back to DOM renderer', e);
+        }
+      }
+
       term.open(wrapper);
 
       if (isMobileDevice()) {
@@ -4502,9 +4432,9 @@
 
       term.onData((data) => {
         const current = terminals.get(termId);
-        if (!current || !ws || ws.readyState !== 1) return;
+        if (!current || !ccApi.ws || ccApi.ws.readyState !== 1) return;
         if (current.attached) {
-          send({ type: 'terminal_input', termId, data });
+          ccApi.send({ type: 'terminal_input', termId, data });
           return;
         }
         bufferTerminalInputState(current, data);
@@ -4515,8 +4445,8 @@
 
       term.onResize(({ cols, rows }) => {
         const current = terminals.get(termId);
-        if (current?.attached && ws && ws.readyState === 1) {
-          send({ type: 'terminal_resize', termId, cols, rows });
+        if (current?.attached && ccApi.ws && ccApi.ws.readyState === 1) {
+          ccApi.send({ type: 'terminal_resize', termId, cols, rows });
         }
       });
 
@@ -4529,16 +4459,16 @@
     function detachTerminal(termId) {
       const entry = terminals.get(termId);
       if (!entry) return;
-      if ((entry.attached || entry.attaching) && ws && ws.readyState === 1) {
-        send({ type: 'terminal_detach', termId });
+      if ((entry.attached || entry.attaching) && ccApi.ws && ccApi.ws.readyState === 1) {
+        ccApi.send({ type: 'terminal_detach', termId });
       }
       markTerminalDetachedState(entry);
     }
 
     function attachTerminal(termId) {
       const entry = ensureTerminalInstance(termId);
-      if (!entry || !entry.term || !ws || ws.readyState !== 1) return;
-      send({
+      if (!entry || !entry.term || !ccApi.ws || ccApi.ws.readyState !== 1) return;
+      ccApi.send({
         type: 'terminal_attach',
         termId,
         cols: entry.term.cols || 80,
@@ -4587,7 +4517,7 @@
             event.stopPropagation();
             const nextTitle = window.prompt('终端名称', entry.meta?.title || '');
             if (nextTitle && nextTitle.trim()) {
-              send({ type: 'terminal_rename', termId, title: nextTitle.trim() });
+              ccApi.send({ type: 'terminal_rename', termId, title: nextTitle.trim() });
             }
             return;
           }
@@ -4595,7 +4525,7 @@
             event.preventDefault();
             event.stopPropagation();
             if (window.confirm(`关闭 ${entry.meta?.title || '该终端'}？`)) {
-              send({ type: 'terminal_close', termId });
+              ccApi.send({ type: 'terminal_close', termId });
             }
             return;
           }
@@ -4697,18 +4627,18 @@
 
     function syncTerminalHosts_() {
       renderHostList();
-      if (ws && ws.readyState === 1) {
-        send({ type: 'list_terminals', hostId: currentHostId });
+      if (ccApi.ws && ccApi.ws.readyState === 1) {
+        ccApi.send({ type: 'list_terminals', hostId: currentHostId });
       }
     }
 
     if (terminalAddBtn) {
       terminalAddBtn.addEventListener('click', () => {
-        if (!ws || ws.readyState !== 1) {
+        if (!ccApi.ws || ccApi.ws.readyState !== 1) {
           appendError('连接未就绪，无法创建终端。');
           return;
         }
-        send({ type: 'terminal_create', hostId: currentHostId, cwd: currentCwd || undefined });
+        ccApi.send({ type: 'terminal_create', hostId: currentHostId, cwd: currentCwd || undefined });
       });
     }
 
@@ -4718,11 +4648,11 @@
 
     if (terminalCwdBtn) {
       terminalCwdBtn.addEventListener('click', () => {
-        if (!activeTermId || !currentCwd || !ws || ws.readyState !== 1) return;
+        if (!activeTermId || !currentCwd || !ccApi.ws || ccApi.ws.readyState !== 1) return;
         const entry = terminals.get(activeTermId);
         if (entry?.meta) entry.meta.cwd = currentCwd;
         const cdCmd = `cd "${currentCwd.replace(/"/g, '\\"')}"\n`;
-        send({ type: 'terminal_input', termId: activeTermId, data: cdCmd });
+        ccApi.send({ type: 'terminal_input', termId: activeTermId, data: cdCmd });
         updateTerminalToolbar();
         renderTerminalList();
       });
@@ -4739,29 +4669,29 @@
       terminalSidebarOverlay.addEventListener('click', closeTerminalDrawer);
     }
 
-    window.addEventListener('resize', () => {
+    window.addEventListener('resize', debounce(() => {
       const entry = getActiveTerminal();
       if (!entry?.fitAddon || !entry.term) return;
       requestAnimationFrame(() => {
         entry.fitAddon.fit();
-        if (entry.attached && ws && ws.readyState === 1) {
-          send({ type: 'terminal_resize', termId: activeTermId, cols: entry.term.cols, rows: entry.term.rows });
+        if (entry.attached && ccApi.ws && ccApi.ws.readyState === 1) {
+          ccApi.send({ type: 'terminal_resize', termId: activeTermId, cols: entry.term.cols, rows: entry.term.rows });
         }
       });
-    });
+    }, 100));
 
-    const termResizeObserver = new ResizeObserver(() => {
+    const termResizeObserver = new ResizeObserver(debounce(() => {
       const entry = getActiveTerminal();
       if (!entry?.fitAddon || !entry.term) return;
       requestAnimationFrame(() => {
         if (entry.term.element && entry.term.element.offsetParent) {
           entry.fitAddon.fit();
-          if (entry.attached && ws && ws.readyState === 1) {
-            send({ type: 'terminal_resize', termId: activeTermId, cols: entry.term.cols, rows: entry.term.rows });
+          if (entry.attached && ccApi.ws && ccApi.ws.readyState === 1) {
+            ccApi.send({ type: 'terminal_resize', termId: activeTermId, cols: entry.term.cols, rows: entry.term.rows });
           }
         }
       });
-    });
+    }, 100));
     if (terminalContainer) termResizeObserver.observe(terminalContainer);
 
     if (termMobileBar) {
@@ -4781,8 +4711,8 @@
           return;
         }
         const seq = TMB_KEY_MAP[btn.dataset.key];
-        if (seq && ws && ws.readyState === 1) {
-          send({ type: 'terminal_input', termId: activeTermId, data: seq });
+        if (seq && ccApi.ws && ccApi.ws.readyState === 1) {
+          ccApi.send({ type: 'terminal_input', termId: activeTermId, data: seq });
           if (termMobileInput) termMobileInput.focus();
         }
       });
@@ -4794,11 +4724,11 @@
       termMobileInput.addEventListener('compositionend', (e) => {
         const text = e.data || termMobileInput.value;
         termMobileInput.value = '';
-        if (text && activeTermId && ws && ws.readyState === 1) {
+        if (text && activeTermId && ccApi.ws && ccApi.ws.readyState === 1) {
           const entry = getActiveTerminal();
           if (!entry) return;
           if (entry.attached) {
-            send({ type: 'terminal_input', termId: activeTermId, data: text });
+            ccApi.send({ type: 'terminal_input', termId: activeTermId, data: text });
           } else {
             bufferTerminalInputState(entry, text);
             if (startTerminalAttachState(entry)) attachTerminal(activeTermId);
@@ -4819,11 +4749,11 @@
           tmbCtrlActive = false;
           if (tmbCtrlBtn) tmbCtrlBtn.classList.remove('active');
         }
-        if (ws && ws.readyState === 1) {
+        if (ccApi.ws && ccApi.ws.readyState === 1) {
           const entry = getActiveTerminal();
           if (!entry) return;
           if (entry.attached) {
-            send({ type: 'terminal_input', termId: activeTermId, data: outStr });
+            ccApi.send({ type: 'terminal_input', termId: activeTermId, data: outStr });
           } else {
             bufferTerminalInputState(entry, outStr);
             if (startTerminalAttachState(entry)) attachTerminal(activeTermId);
@@ -4832,7 +4762,7 @@
       });
 
       termMobileInput.addEventListener('keydown', (e) => {
-        if (!activeTermId || !ws || ws.readyState !== 1) return;
+        if (!activeTermId || !ccApi.ws || ccApi.ws.readyState !== 1) return;
         if (e.key === 'Enter') {
           let data = '\r';
           if (tmbCtrlActive) {
@@ -4843,7 +4773,7 @@
           const entry = getActiveTerminal();
           if (!entry) return;
           if (entry.attached) {
-            send({ type: 'terminal_input', termId: activeTermId, data });
+            ccApi.send({ type: 'terminal_input', termId: activeTermId, data });
           } else {
             bufferTerminalInputState(entry, data);
             if (startTerminalAttachState(entry)) attachTerminal(activeTermId);
@@ -4853,7 +4783,7 @@
           const entry = getActiveTerminal();
           if (!entry) return;
           if (entry.attached) {
-            send({ type: 'terminal_input', termId: activeTermId, data: '\x7f' });
+            ccApi.send({ type: 'terminal_input', termId: activeTermId, data: '\x7f' });
           } else {
             bufferTerminalInputState(entry, '\x7f');
             if (startTerminalAttachState(entry)) attachTerminal(activeTermId);

@@ -7,7 +7,7 @@ const { WebSocketServer } = require('ws');
 const { createAgentRuntime } = require('./lib/agent-runtime');
 const { createCodexRolloutStore } = require('./lib/codex-rollouts');
 const { sqliteExec, sqliteSupport } = require('./lib/sqlite');
-const pty = require('node-pty');
+const terminalManager = require('./lib/terminal-manager');
 
 const ENV_FILE_PATH = process.env.CC_WEB_ENV_FILE || path.join(__dirname, '.env');
 
@@ -30,8 +30,6 @@ const PUBLIC_DIR = process.env.CC_WEB_PUBLIC_DIR || path.join(__dirname, 'public
 const LOGS_DIR = process.env.CC_WEB_LOGS_DIR || path.join(__dirname, 'logs');
 const ATTACHMENTS_DIR = path.join(SESSIONS_DIR, '_attachments');
 const TERMINAL_REGISTRY_PATH = path.join(SESSIONS_DIR, '_terminals.json');
-const TERMINAL_SESSION_PREFIX = 'ccweb';
-const MAX_TERMINALS = 32;
 const ATTACHMENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MAX_MESSAGE_ATTACHMENTS = 4;
@@ -592,393 +590,6 @@ const activeProcesses = new Map();
 // Track which session each ws is viewing: ws -> sessionId
 const wsSessionMap = new Map();
 
-// === Persistent Terminal Management ===
-const activeTerminalViewers = new Map(); // wsId -> Map<termId, { ws, pty, cols, rows }>
-
-function defaultTerminalRegistry() {
-  return { version: 1, counter: 0, order: [], terminals: [] };
-}
-
-function getTerminalHosts() {
-  const devConfig = loadDevConfig();
-  const sshHosts = Array.isArray(devConfig.ssh?.hosts) ? devConfig.ssh.hosts : [];
-  return [
-    { id: 'local', name: '本机', type: 'local' },
-    ...sshHosts.map((host) => ({
-      id: String(host.id || '').trim(),
-      name: String(host.name || host.host || '未命名主机').trim(),
-      type: 'ssh',
-      host: String(host.host || '').trim(),
-      port: parseInt(host.port, 10) || 22,
-      user: String(host.user || '').trim(),
-      authType: host.authType === 'password' ? 'password' : 'key',
-      identityFile: String(host.identityFile || '').trim(),
-      password: String(host.password || ''),
-      description: String(host.description || '').trim(),
-    })).filter((host) => host.id && host.host),
-  ];
-}
-
-function findTerminalHost(hostId) {
-  const id = String(hostId || 'local').trim() || 'local';
-  return getTerminalHosts().find((host) => host.id === id) || null;
-}
-
-function shellEscape(value) {
-  return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
-}
-
-function buildRemoteTerminalCommand(host, remoteCwd = '') {
-  const sshTarget = `${host.user || 'root'}@${host.host}`;
-  const remoteCommand = remoteCwd
-    ? `cd ${shellEscape(remoteCwd)} && exec \${SHELL:-/bin/bash} -l`
-    : '';
-  if (host.authType === 'password') {
-    return `exec sshpass -p ${shellEscape(host.password || '')} ssh -tt -o StrictHostKeyChecking=no -p ${host.port || 22} ${shellEscape(sshTarget)}${remoteCommand ? ` ${shellEscape(remoteCommand)}` : ''}`;
-  }
-  return `exec ssh -tt -o StrictHostKeyChecking=no -p ${host.port || 22}${host.identityFile ? ` -i ${shellEscape(host.identityFile)}` : ''} ${shellEscape(sshTarget)}${remoteCommand ? ` ${shellEscape(remoteCommand)}` : ''}`;
-}
-
-function buildTerminalLaunchSpec(hostId, cwd, remoteCwd = '') {
-  const host = findTerminalHost(hostId);
-  if (!host) throw new Error('目标 Host 不存在，请先在 Host 设置中保存');
-  if (host.type === 'local') {
-    const resolvedCwd = resolveTerminalCwd(cwd);
-    return {
-      hostId: 'local',
-      hostName: host.name,
-      cwd: resolvedCwd,
-      tmuxCwd: resolvedCwd,
-      commandArgs: [process.env.SHELL || '/bin/bash'],
-    };
-  }
-  return {
-    hostId: host.id,
-    hostName: host.name,
-    cwd: remoteCwd || `${host.user || 'root'}@${host.host}`,
-    tmuxCwd: process.env.HOME || '/root',
-    commandArgs: [process.env.SHELL || '/bin/bash', '-lc', buildRemoteTerminalCommand(host, remoteCwd)],
-  };
-}
-
-function loadTerminalRegistry() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(TERMINAL_REGISTRY_PATH, 'utf8'));
-    const terminals = Array.isArray(parsed?.terminals) ? parsed.terminals.filter((item) => item && item.id) : [];
-    const order = Array.isArray(parsed?.order) ? parsed.order.filter((id) => terminals.some((item) => item.id === id)) : [];
-    for (const terminal of terminals) {
-      if (!order.includes(terminal.id)) order.push(terminal.id);
-    }
-    return {
-      version: 1,
-      counter: Number.isFinite(parsed?.counter) ? parsed.counter : terminals.length,
-      order,
-      terminals: terminals.map((terminal) => ({
-        id: String(terminal.id),
-        title: String(terminal.title || '终端'),
-        tmuxSession: String(terminal.tmuxSession || ''),
-        hostId: String(terminal.hostId || 'local'),
-        hostName: String(terminal.hostName || '本机'),
-        cwd: String(terminal.cwd || process.env.HOME || '/root'),
-        created: terminal.created || new Date().toISOString(),
-        updated: terminal.updated || new Date().toISOString(),
-        status: terminal.status === 'missing' ? 'missing' : 'running',
-      })),
-    };
-  } catch {
-    return defaultTerminalRegistry();
-  }
-}
-
-function saveTerminalRegistry(registry) {
-  fs.writeFileSync(TERMINAL_REGISTRY_PATH, JSON.stringify(registry, null, 2));
-}
-
-function listSessionJsonFiles() {
-  return fs.readdirSync(SESSIONS_DIR).filter((file) => file.endsWith('.json') && !file.startsWith('_'));
-}
-
-function resolveTerminalCwd(cwd) {
-  let resolved = cwd || process.env.HOME || '/root';
-  if (cwd) {
-    try {
-      if (!fs.statSync(cwd).isDirectory()) resolved = process.env.HOME || '/root';
-    } catch {
-      resolved = process.env.HOME || '/root';
-    }
-  }
-  return resolved;
-}
-
-function buildTmuxSessionName(id) {
-  return `${TERMINAL_SESSION_PREFIX}-${sanitizeId(id).slice(0, 24)}`;
-}
-
-function tmuxCommand(args) {
-  return spawnSync('tmux', args, { encoding: 'utf8' });
-}
-
-function tmuxHasSession(sessionName) {
-  return tmuxCommand(['has-session', '-t', sessionName]).status === 0;
-}
-
-function createTmuxSession(sessionName, launchSpec) {
-  const result = tmuxCommand(['new-session', '-d', '-s', sessionName, '-c', launchSpec.tmuxCwd, ...launchSpec.commandArgs]);
-  if (result.status !== 0) {
-    throw new Error((result.stderr || result.stdout || 'tmux new-session failed').trim());
-  }
-}
-
-function killTmuxSession(sessionName) {
-  tmuxCommand(['kill-session', '-t', sessionName]);
-}
-
-function syncTerminalRegistryStatus() {
-  const registry = loadTerminalRegistry();
-  let changed = false;
-  for (const terminal of registry.terminals) {
-    const nextStatus = terminal.tmuxSession && tmuxHasSession(terminal.tmuxSession) ? 'running' : 'missing';
-    if (terminal.status !== nextStatus) {
-      terminal.status = nextStatus;
-      terminal.updated = new Date().toISOString();
-      changed = true;
-    }
-  }
-  if (changed) saveTerminalRegistry(registry);
-  return registry;
-}
-
-function orderedTerminals(hostId = 'local', registry = syncTerminalRegistryStatus()) {
-  const lookup = new Map(registry.terminals.map((item) => [item.id, item]));
-  return registry.order
-    .map((id) => lookup.get(id))
-    .filter((item) => item && String(item.hostId || 'local') === String(hostId || 'local'));
-}
-
-function sendTerminalList(ws, hostId = 'local') {
-  if (ws) ws._ccTerminalHostId = hostId;
-  wsSend(ws, { type: 'terminal_list', hostId, terminals: orderedTerminals(hostId) });
-}
-
-function broadcastTerminalList() {
-  for (const client of wss.clients) {
-    if (client.readyState === 1 && client._ccAuthenticated) {
-      const hostId = client._ccTerminalHostId || 'local';
-      client.send(JSON.stringify({ type: 'terminal_list', hostId, terminals: orderedTerminals(hostId) }));
-    }
-  }
-}
-
-function findTerminalById(termId) {
-  const registry = syncTerminalRegistryStatus();
-  const terminal = registry.terminals.find((item) => item.id === termId) || null;
-  return { registry, terminal };
-}
-
-function ensureInitialTerminalRegistry() {
-  if (fs.existsSync(TERMINAL_REGISTRY_PATH)) {
-    syncTerminalRegistryStatus();
-    return;
-  }
-  const registry = defaultTerminalRegistry();
-  saveTerminalRegistry(registry);
-  try {
-    const cwd = resolveTerminalCwd(process.cwd());
-    const termId = crypto.randomUUID();
-    registry.counter = 1;
-    registry.order = [termId];
-    registry.terminals = [{
-      id: termId,
-      title: '终端 1',
-      tmuxSession: buildTmuxSessionName(termId),
-      hostId: 'local',
-      hostName: '本机',
-      cwd,
-      created: new Date().toISOString(),
-      updated: new Date().toISOString(),
-      status: 'running',
-    }];
-    createTmuxSession(registry.terminals[0].tmuxSession, {
-      tmuxCwd: cwd,
-      commandArgs: [process.env.SHELL || '/bin/bash'],
-    });
-    saveTerminalRegistry(registry);
-  } catch (err) {
-    plog('WARN', 'terminal_registry_init_error', { error: err.message });
-  }
-}
-
-function terminalViewersForWs(wsId, create = false) {
-  let viewers = activeTerminalViewers.get(wsId);
-  if (!viewers && create) {
-    viewers = new Map();
-    activeTerminalViewers.set(wsId, viewers);
-  }
-  return viewers || null;
-}
-
-function terminalDetach(wsId, termId) {
-  const viewers = terminalViewersForWs(wsId);
-  if (!viewers) return;
-  if (termId) {
-    const entry = viewers.get(termId);
-    if (entry?.pty) {
-      entry.suppressOutput = true;
-      entry.suppressExit = true;
-      try { entry.pty.kill(); } catch {}
-      viewers.delete(termId);
-    }
-  } else {
-    for (const entry of viewers.values()) {
-      if (entry?.pty) {
-        entry.suppressOutput = true;
-        entry.suppressExit = true;
-        try { entry.pty.kill(); } catch {}
-      }
-    }
-    viewers.clear();
-  }
-  if (viewers.size === 0) activeTerminalViewers.delete(wsId);
-}
-
-function terminalCreate(ws, msg) {
-  const registry = loadTerminalRegistry();
-  if (registry.terminals.length >= MAX_TERMINALS) {
-    return wsSend(ws, { type: 'error', message: `终端数量已达上限 (${MAX_TERMINALS})` });
-  }
-  const termId = crypto.randomUUID();
-  let launchSpec;
-  try {
-    launchSpec = buildTerminalLaunchSpec(msg?.hostId || 'local', msg?.cwd, msg?.remoteCwd || '');
-  } catch (err) {
-    return wsSend(ws, { type: 'error', message: err.message });
-  }
-  const title = String(msg?.title || '').trim() || `终端 ${registry.counter + 1}`;
-  const tmuxSession = buildTmuxSessionName(termId);
-  try {
-    createTmuxSession(tmuxSession, launchSpec);
-  } catch (err) {
-    plog('WARN', 'terminal_create_error', { termId, hostId: launchSpec.hostId, error: err.message });
-    return wsSend(ws, { type: 'error', message: `创建终端失败: ${err.message}` });
-  }
-  const terminal = {
-    id: termId,
-    title,
-    tmuxSession,
-    hostId: launchSpec.hostId,
-    hostName: launchSpec.hostName,
-    cwd: launchSpec.cwd,
-    created: new Date().toISOString(),
-    updated: new Date().toISOString(),
-    status: 'running',
-  };
-  registry.counter += 1;
-  registry.order.push(termId);
-  registry.terminals.push(terminal);
-  saveTerminalRegistry(registry);
-  plog('INFO', 'terminal_create', { termId, tmuxSession, hostId: terminal.hostId, cwd: terminal.cwd });
-  wsSend(ws, { type: 'terminal_created', terminal });
-  broadcastTerminalList();
-}
-
-function terminalAttach(ws, wsId, msg) {
-  const termId = String(msg?.termId || '').trim();
-  if (!termId) return wsSend(ws, { type: 'error', message: '缺少终端 ID' });
-  const { terminal } = findTerminalById(termId);
-  if (!terminal) return wsSend(ws, { type: 'error', message: '终端不存在' });
-  if (terminal.status !== 'running') return wsSend(ws, { type: 'error', message: '终端会话已丢失，请关闭后重建' });
-
-  terminalDetach(wsId, termId);
-
-  const cols = Math.max(20, Number(msg?.cols) || 80);
-  const rows = Math.max(8, Number(msg?.rows) || 24);
-  try {
-    const ptyProcess = pty.spawn('tmux', ['attach-session', '-t', terminal.tmuxSession], {
-      name: 'xterm-256color',
-      cols,
-      rows,
-      cwd: terminal.cwd,
-      env: { ...process.env, TERM: 'xterm-256color' },
-    });
-    const viewers = terminalViewersForWs(wsId, true);
-    const viewerEntry = { ws, pty: ptyProcess, cols, rows, suppressOutput: false, suppressExit: false };
-    viewers.set(termId, viewerEntry);
-    ptyProcess.onData((data) => {
-      if (!viewerEntry.suppressOutput && ws && ws.readyState === 1) {
-        wsSend(ws, { type: 'terminal_output', termId, data });
-      }
-    });
-    ptyProcess.onExit(({ exitCode }) => {
-      const active = terminalViewersForWs(wsId);
-      if (active) {
-        active.delete(termId);
-        if (active.size === 0) activeTerminalViewers.delete(wsId);
-      }
-      if (!viewerEntry.suppressExit && ws && ws.readyState === 1) {
-        wsSend(ws, { type: 'terminal_exit', termId, exitCode });
-      }
-    });
-    wsSend(ws, { type: 'terminal_attached', termId });
-    plog('INFO', 'terminal_attach', { wsId, termId, tmuxSession: terminal.tmuxSession });
-  } catch (err) {
-    plog('WARN', 'terminal_attach_error', { wsId, termId, error: err.message });
-    wsSend(ws, { type: 'error', message: `连接终端失败: ${err.message}` });
-  }
-}
-
-function terminalInput(wsId, msg) {
-  const termId = String(msg?.termId || '').trim();
-  const viewers = terminalViewersForWs(wsId);
-  const entry = viewers ? viewers.get(termId) : null;
-  if (entry?.pty) entry.pty.write(msg.data || '');
-}
-
-function terminalResize(wsId, msg) {
-  const termId = String(msg?.termId || '').trim();
-  const viewers = terminalViewersForWs(wsId);
-  const entry = viewers ? viewers.get(termId) : null;
-  if (entry?.pty) {
-    const cols = Math.max(20, Number(msg?.cols) || 80);
-    const rows = Math.max(8, Number(msg?.rows) || 24);
-    entry.pty.resize(cols, rows);
-    entry.cols = cols;
-    entry.rows = rows;
-  }
-}
-
-function terminalRename(ws, msg) {
-  const termId = String(msg?.termId || '').trim();
-  const title = String(msg?.title || '').trim().slice(0, 80);
-  if (!termId || !title) return wsSend(ws, { type: 'error', message: '缺少终端名称' });
-  const registry = loadTerminalRegistry();
-  const terminal = registry.terminals.find((item) => item.id === termId);
-  if (!terminal) return wsSend(ws, { type: 'error', message: '终端不存在' });
-  terminal.title = title;
-  terminal.updated = new Date().toISOString();
-  saveTerminalRegistry(registry);
-  broadcastTerminalList();
-}
-
-function terminalClose(ws, msg) {
-  const termId = String(msg?.termId || '').trim();
-  if (!termId) return wsSend(ws, { type: 'error', message: '缺少终端 ID' });
-  const registry = loadTerminalRegistry();
-  const terminal = registry.terminals.find((item) => item.id === termId);
-  if (!terminal) return wsSend(ws, { type: 'error', message: '终端不存在' });
-
-  for (const [viewerWsId] of activeTerminalViewers) {
-    terminalDetach(viewerWsId, termId);
-  }
-  if (terminal.tmuxSession) {
-    try { killTmuxSession(terminal.tmuxSession); } catch {}
-  }
-  registry.order = registry.order.filter((id) => id !== termId);
-  registry.terminals = registry.terminals.filter((item) => item.id !== termId);
-  saveTerminalRegistry(registry);
-  plog('INFO', 'terminal_close', { termId, tmuxSession: terminal.tmuxSession });
-  broadcastTerminalList();
-}
-
 // Default fallback MODEL_MAP (overridden by model config at runtime)
 // opus/sonnet use [1m] suffix to enable 1M context window by default
 let MODEL_MAP = {
@@ -1318,6 +929,31 @@ function wsSend(ws, data) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
 }
 
+// Simple in-memory rate limiter
+class RateLimiter {
+  constructor(limit, windowMs) {
+    this.limit = limit;
+    this.windowMs = windowMs;
+    this.hits = new Map(); // key -> { count, startTime }
+  }
+  isAllowed(key) {
+    const now = Date.now();
+    const state = this.hits.get(key) || { count: 0, startTime: now };
+    if (now - state.startTime > this.windowMs) {
+      state.count = 1;
+      state.startTime = now;
+      this.hits.set(key, state);
+      return true;
+    }
+    state.count += 1;
+    this.hits.set(key, state);
+    return state.count <= this.limit;
+  }
+}
+
+const authRateLimiter = new RateLimiter(5, 60 * 1000); // 5 attempts per minute
+const messageRateLimiter = new RateLimiter(20, 60 * 1000); // 20 messages per minute
+
 function sanitizeId(id) {
   return String(id).replace(/[^a-zA-Z0-9\-]/g, '');
 }
@@ -1592,6 +1228,10 @@ function cleanRunDir(sessionId) {
 }
 
 /** Build the sorted session list array (shared by sendSessionList and broadcastSessionList). */
+function listSessionJsonFiles() {
+  return fs.readdirSync(SESSIONS_DIR).filter((file) => file.endsWith('.json') && !file.startsWith('_'));
+}
+
 function buildSessionList() {
   const files = listSessionJsonFiles();
   const sessions = [];
@@ -1623,7 +1263,10 @@ function sendSessionList(ws) {
 /** Broadcast session list to ALL authenticated WebSocket clients.
  *  Ensures phone/desktop stay in sync when sessions change.
  *  Builds the list once and sends the same payload to all clients. */
-function broadcastSessionList() {
+let _broadcastSessionListTimer = null;
+let _lastBroadcastTime = 0;
+
+function _executeBroadcastSessionList() {
   try {
     const sessions = buildSessionList();
     const payload = JSON.stringify({ type: 'session_list', sessions });
@@ -1633,6 +1276,21 @@ function broadcastSessionList() {
       }
     }
   } catch {}
+}
+
+function broadcastSessionList() {
+  const now = Date.now();
+  if (now - _lastBroadcastTime >= 200) {
+    _lastBroadcastTime = now;
+    _executeBroadcastSessionList();
+    return;
+  }
+  if (_broadcastSessionListTimer) return;
+  _broadcastSessionListTimer = setTimeout(() => {
+    _broadcastSessionListTimer = null;
+    _lastBroadcastTime = Date.now();
+    _executeBroadcastSessionList();
+  }, 200 - (now - _lastBroadcastTime));
 }
 
 // === File Tailer ===
@@ -2178,6 +1836,15 @@ const server = http.createServer((req, res) => {
 // === WebSocket Server ===
 const wss = new WebSocketServer({ server });
 
+terminalManager.init({
+  plog,
+  wsSend,
+  wss,
+  loadDevConfig,
+  sanitizeId,
+  TERMINAL_REGISTRY_PATH
+});
+
 wss.on('connection', (ws, req) => {
   ws._req = req;
   const clientIP = getClientIP(ws);
@@ -2205,6 +1872,10 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.type === 'auth') {
+      if (!authRateLimiter.isAllowed(clientIP)) {
+        plog('WARN', 'auth_rate_limited', { ip: clientIP });
+        return wsSend(ws, { type: 'error', message: '请求过于频繁，请稍后再试' });
+      }
       // Check ban before processing auth
       if (clientIP && isBanned(clientIP)) {
         wsSend(ws, { type: 'auth_result', success: false, banned: true });
@@ -2219,7 +1890,7 @@ wss.on('connection', (ws, req) => {
         ws._ccTerminalHostId = 'local';
         wsSend(ws, { type: 'auth_result', success: true, token: authToken, mustChangePassword: !!authConfig.mustChange });
         sendSessionList(ws);
-        sendTerminalList(ws, 'local');
+        terminalManager.sendTerminalList(ws, 'local');
       } else {
         const justBanned = recordAuthFailure(clientIP);
         wsSend(ws, { type: 'auth_result', success: false, banned: justBanned });
@@ -2234,6 +1905,10 @@ wss.on('connection', (ws, req) => {
 
     switch (msg.type) {
       case 'message':
+        if (!messageRateLimiter.isAllowed(wsId)) {
+          plog('WARN', 'message_rate_limited', { wsId });
+          return wsSend(ws, { type: 'error', message: '消息发送过于频繁，请稍后再试' });
+        }
         if (msg.text && msg.text.trim().startsWith('/')) {
           handleSlashCommand(ws, msg.text.trim(), msg.sessionId, msg.agent);
         } else {
@@ -2262,7 +1937,7 @@ wss.on('connection', (ws, req) => {
         sendSessionList(ws);
         break;
       case 'list_terminals':
-        sendTerminalList(ws, msg?.hostId || 'local');
+        terminalManager.sendTerminalList(ws, msg?.hostId || 'local');
         break;
       case 'detach_view':
         handleDetachView(ws, wsId);
@@ -2331,25 +2006,25 @@ wss.on('connection', (ws, req) => {
         handleListCwdSuggestions(ws);
         break;
       case 'terminal_create':
-        terminalCreate(ws, msg);
+        terminalManager.terminalCreate(ws, msg);
         break;
       case 'terminal_attach':
-        terminalAttach(ws, wsId, msg);
+        terminalManager.terminalAttach(ws, wsId, msg);
         break;
       case 'terminal_input':
-        terminalInput(wsId, msg);
+        terminalManager.terminalInput(wsId, msg);
         break;
       case 'terminal_resize':
-        terminalResize(wsId, msg);
+        terminalManager.terminalResize(wsId, msg);
         break;
       case 'terminal_detach':
-        terminalDetach(wsId, msg.termId);
+        terminalManager.terminalDetach(wsId, msg.termId);
         break;
       case 'terminal_rename':
-        terminalRename(ws, msg);
+        terminalManager.terminalRename(ws, msg);
         break;
       case 'terminal_close':
-        terminalClose(ws, msg);
+        terminalManager.terminalClose(ws, msg);
         break;
 
       default:
@@ -3276,7 +2951,7 @@ function handleDisconnect(ws, wsId) {
     }
   }
   wsSessionMap.delete(ws);
-  terminalDetach(wsId);
+  terminalManager.terminalDetach(wsId);
   plog('INFO', 'ws_disconnect', { wsId, activeProcessesAffected: affectedSessions });
 }
 
@@ -3288,7 +2963,7 @@ function handleDetachView(ws, wsId) {
     }
   }
   wsSessionMap.delete(ws);
-  terminalDetach(wsId);
+  terminalManager.terminalDetach(wsId);
 }
 
 function handleAbort(ws) {
@@ -4017,7 +3692,7 @@ function handleListCwdSuggestions(ws) {
 }
 
 // === Startup ===
-ensureInitialTerminalRegistry();
+terminalManager.ensureInitialTerminalRegistry();
 recoverProcesses();
 
 // Periodic heartbeat: log active processes status every 60s

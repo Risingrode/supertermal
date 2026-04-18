@@ -1534,12 +1534,7 @@ body.session-loading-active {
   outline: none;
   min-width: 0;
 }
-.sidebar-footer {
-  padding: 12px;
-  border-top: 1px solid var(--border-color);
-  text-align: center;
-  flex-shrink: 0;
-}
+/* Sidebar Footer removed - handled in Settings & Theme Buttons section */
 .brand { font-size: 12px; color: var(--text-muted); }
 
 /* === Chat Main === */
@@ -2679,8 +2674,8 @@ body.session-loading-active {
   margin-left: 4px;
 }
 
-/* === Settings Button (sidebar) === */
-.settings-btn {
+/* === Settings & Theme Buttons (sidebar) === */
+.theme-btn, .settings-btn {
   background: none;
   border: none;
   font-size: 18px;
@@ -2690,9 +2685,18 @@ body.session-loading-active {
   border-radius: 6px;
   transition: color 0.15s, background 0.15s;
   vertical-align: middle;
-  margin-right: 8px;
 }
-.settings-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.theme-btn:hover, .settings-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.settings-btn { margin-right: 0; }
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
 
 /* === Settings Overlay & Panel === */
 .settings-overlay {
