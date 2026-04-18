@@ -9,14 +9,17 @@ const { createCodexRolloutStore } = require('./lib/codex-rollouts');
 const { sqliteExec, sqliteSupport } = require('./lib/sqlite');
 const pty = require('node-pty');
 
-// Load .env
-const envPath = path.join(__dirname, '.env');
-if (fs.existsSync(envPath)) {
-  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+const ENV_FILE_PATH = process.env.CC_WEB_ENV_FILE || path.join(__dirname, '.env');
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  for (const line of fs.readFileSync(filePath, 'utf8').split('\n')) {
     const m = line.match(/^([^#=]+)=(.*)$/);
     if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim();
   }
 }
+
+loadEnvFile(ENV_FILE_PATH);
 
 const PORT = parseInt(process.env.PORT) || 8002;
 const CLAUDE_PATH = process.env.CLAUDE_PATH || 'claude';
@@ -34,7 +37,7 @@ const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const MAX_MESSAGE_ATTACHMENTS = 4;
 const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const NOTIFY_CONFIG_PATH = path.join(CONFIG_DIR, 'notify.json');
-const AUTH_CONFIG_PATH = path.join(CONFIG_DIR, 'auth.json');
+const LEGACY_AUTH_CONFIG_PATH = path.join(CONFIG_DIR, 'auth.json');
 const MODEL_CONFIG_PATH = path.join(CONFIG_DIR, 'model.json');
 const CODEX_CONFIG_PATH = path.join(CONFIG_DIR, 'codex.json');
 const BANNED_IPS_PATH = path.join(CONFIG_DIR, 'banned_ips.json');
@@ -376,6 +379,59 @@ function sendNotification(title, content) {
 loadNotifyConfig();
 
 // === Auth Config ===
+function parseEnvBool(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(String(value).trim());
+}
+
+function ensureEnvFile(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, '');
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function setEnvValue(filePath, key, value) {
+  ensureEnvFile(filePath);
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const lines = raw ? raw.split(/\r?\n/) : [];
+  const activePattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`);
+  const commentedPattern = new RegExp(`^\\s*#\\s*${escapeRegExp(key)}\\s*=`);
+  const nextLines = [];
+  let replaced = false;
+  for (const line of lines) {
+    if (activePattern.test(line) || commentedPattern.test(line)) {
+      if (!replaced) {
+        nextLines.push(`${key}=${value}`);
+        replaced = true;
+      }
+      continue;
+    }
+    nextLines.push(line);
+  }
+  if (!replaced) {
+    if (nextLines.length && nextLines[nextLines.length - 1] !== '') nextLines.push('');
+    nextLines.push(`${key}=${value}`);
+  }
+  fs.writeFileSync(filePath, nextLines.join('\n').replace(/\n*$/, '\n'));
+}
+
+function removeLegacyAuthConfig() {
+  try {
+    if (fs.existsSync(LEGACY_AUTH_CONFIG_PATH)) fs.unlinkSync(LEGACY_AUTH_CONFIG_PATH);
+  } catch {}
+}
+
+function persistAuthConfig(config) {
+  setEnvValue(ENV_FILE_PATH, 'CC_WEB_PASSWORD', config.password);
+  setEnvValue(ENV_FILE_PATH, 'CC_WEB_PASSWORD_MUST_CHANGE', String(!!config.mustChange));
+  process.env.CC_WEB_PASSWORD = config.password;
+  process.env.CC_WEB_PASSWORD_MUST_CHANGE = String(!!config.mustChange);
+  removeLegacyAuthConfig();
+}
+
 function generateRandomPassword(length = 12) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
@@ -387,35 +443,39 @@ function generateRandomPassword(length = 12) {
 }
 
 function loadAuthConfig() {
-  // Priority 1: config/auth.json exists with password
+  // Priority 1: .env has CC_WEB_PASSWORD
+  const envPw = process.env.CC_WEB_PASSWORD;
+  if (envPw && envPw !== 'changeme') {
+    return {
+      password: envPw,
+      mustChange: parseEnvBool(process.env.CC_WEB_PASSWORD_MUST_CHANGE, false),
+    };
+  }
+
+  // Priority 2: legacy config/auth.json exists with password → migrate to .env
   try {
-    if (fs.existsSync(AUTH_CONFIG_PATH)) {
-      const config = JSON.parse(fs.readFileSync(AUTH_CONFIG_PATH, 'utf8'));
-      if (config.password) return config;
+    if (fs.existsSync(LEGACY_AUTH_CONFIG_PATH)) {
+      const config = JSON.parse(fs.readFileSync(LEGACY_AUTH_CONFIG_PATH, 'utf8'));
+      if (config.password) {
+        const migrated = {
+          password: String(config.password),
+          mustChange: !!config.mustChange,
+        };
+        persistAuthConfig(migrated);
+        return migrated;
+      }
     }
   } catch {}
 
-  // Priority 2: .env has CC_WEB_PASSWORD → migrate
-  const envPw = process.env.CC_WEB_PASSWORD;
-  if (envPw && envPw !== 'changeme') {
-    const config = { password: envPw, mustChange: false };
-    saveAuthConfig(config);
-    return config;
-  }
-
-  // Priority 3: Generate random password
+  // Priority 3: Generate random password and persist to .env
   const pw = generateRandomPassword(12);
   const config = { password: pw, mustChange: true };
-  saveAuthConfig(config);
+  persistAuthConfig(config);
   console.log('========================================');
   console.log('  自动生成初始密码: ' + pw);
   console.log('  首次登录后将要求修改密码');
   console.log('========================================');
   return config;
-}
-
-function saveAuthConfig(config) {
-  fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
 function validatePasswordStrength(pw) {
@@ -2369,7 +2429,7 @@ function handleChangePassword(ws, msg, currentToken) {
 
   // Save new password
   authConfig = { password: newPassword, mustChange: false };
-  saveAuthConfig(authConfig);
+  persistAuthConfig(authConfig);
   PASSWORD = newPassword;
   plog('INFO', 'password_changed', {});
 
