@@ -1,264 +1,246 @@
 # CC-Web
 
-Claude Code / Codex 轻量级 Web 远程工具 — 在浏览器中与本机 CLI Agent 交互。
+面向 Claude Code 和 Codex 的浏览器端超级终端。它把持久化终端、Agent 会话、远程主机接入、通知推送和本地历史导入整合到同一个 Web 界面里，适合在桌面或手机上远程接管本机 / VPS 的开发环境。
 
-![Node.js](https://img.shields.io/badge/Node.js-22+-339933?logo=node.js&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
-[English README](./README.en.md) | [更新日志](./CHANGELOG.md)
-
-Vibe产物，readme比较絮叨，建议直接丢给CC，拷打一番就好。
-
-## 一键部署：claude
-```
-https://github.com/Risingrode/supertermal 给我装！
-```
-
+[更新日志](./CHANGELOG.md)
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/ae974fcd-b6a7-4bdf-8553-bfcf2e7038a4" alt="截图1" width="30%" />
-  <img src="https://github.com/user-attachments/assets/eb0291c1-2b38-4379-9a07-8eecc6c87d8f" alt="截图2" width="30%" />
-  <img src="https://github.com/user-attachments/assets/09cec007-a949-44cf-9f2a-88c1eda60082" alt="截图3" width="30%" />
+  <img src="https://github.com/user-attachments/assets/ae974fcd-b6a7-4bdf-8553-bfcf2e7038a4" alt="界面截图 1" width="30%" />
+  <img src="https://github.com/user-attachments/assets/eb0291c1-2b38-4379-9a07-8eecc6c87d8f" alt="界面截图 2" width="30%" />
+  <img src="https://github.com/user-attachments/assets/09cec007-a949-44cf-9f2a-88c1eda60082" alt="界面截图 3" width="30%" />
 </p>
 
+## 项目定位
 
-## 功能特性
+CC-Web 不是单纯的聊天壳，它更像一个轻量级的 Web 控制台：
 
-- **超轻量** — 后端性能占用少，前端通过 web 访问
-- **多会话管理** — 创建、切换、重命名、删除会话，删除时同步清除本地 Claude 历史记录
-- **本地历史导入** — Claude 可导入 `~/.claude/projects/` 会话；Codex 可导入 `~/.codex/sessions/` rollout 历史
-- **后台任务** — 关闭浏览器后 Claude 进程继续运行，完成后推送通知，支持 PushPlus / Telegram / Server酱 / 飞书机器人 / QQ（Qmsg）
-- **多 API 切换** — 可配置多个 API 方案，一键切换，即时生效
-- **开发者配置** — 可保存主机SSH信息、github token，实现快速管理远程主机、管理github仓库
+- 在浏览器里管理本机或远程主机上的持久化终端
+- 在同一套后端里切换 Claude / Codex 会话
+- 保留长任务运行状态，浏览器断开后仍可继续执行
+- 统一管理通知、API 配置、SSH Host 和 GitHub 凭证
 
-## 前提条件
+如果你的场景是“手机上看 VPS 终端”“浏览器里继续 Claude/Codex 会话”“任务跑完自动通知我”，这个项目就是为这类使用方式设计的。
 
-- **Node.js** >= 18
-- **Claude Code CLI** 或 **Codex CLI** 已安装并配置
-  ```bash
-  npm install -g @anthropic-ai/claude-code
-  npm install -g @openai/codex
-  ```
+## 核心能力
+
+- 持久化终端：基于 `tmux` 创建和恢复终端，会话断开后仍可保留
+- 双 Agent 支持：Claude 和 Codex 共用一套 Web 后端，按 Agent 维度隔离会话和设置
+- 权限模式切换：支持 `yolo`、`default`、`plan` 模式
+- 本地 / 远程任务：新建会话时可直接指定本地目录，或通过 SSH Host 启动远程任务
+- 本地历史导入：支持导入 `~/.claude/projects/` 和 `~/.codex/sessions/` 中的原生历史
+- 图片附件：支持拖拽、粘贴和按钮上传图片，单条消息最多 4 张
+- 通知推送：支持 PushPlus、Telegram、Server酱、飞书机器人、Qmsg
+- AI 摘要通知：任务完成后可基于 Claude / Codex 当前配置或自定义 API 生成简短摘要
+- 开发者配置：在设置面板中保存 SSH 主机、GitHub Token 和仓库信息
+- 密码认证：首次启动可自动生成密码，支持强制改密、会话失效和基础防暴力破解
+
+## 环境要求
+
+- Node.js 18 及以上，推荐 Node.js 22+
+- 已安装 `claude` 和 / 或 `codex` CLI，并且可在命令行直接调用
+- 已安装 `tmux`，否则无法使用持久化终端
+
+按需安装：
+
+- `sshpass`：仅在 SSH Host 使用密码登录时需要
+- `sqlite3`：如果你的 Node 版本较低且要导入 Codex 本地历史，建议安装
+
+CLI 安装示例：
+
+```bash
+npm install -g @anthropic-ai/claude-code
+npm install -g @openai/codex
+```
 
 ## 快速开始
 
 ### Linux / macOS
 
 ```bash
-git clone https://github.com/Risingrode/supertermal.git
-cd supertermal
+git clone https://github.com/ZgDaniel/cc-web.git
+cd cc-web
 npm install
-cp .env.example .env    # 可选，不设密码则首次启动自动生成
+cp .env.example .env
 npm start
 ```
 
 ### Windows
 
 ```cmd
-git clone https://github.com/Risingrode/supertermal.git
-cd supertermal
+git clone https://github.com/ZgDaniel/cc-web.git
+cd cc-web
 npm install
-copy .env.example .env  & REM 可选
+copy .env.example .env
+node server.js
 ```
-然后双击 `start.bat`，或在终端运行 `node server.js`。
 
----
+也可以直接双击 [`start.bat`](./start.bat) 启动。
 
-启动后访问 `http://localhost:8002`，输入密码即可使用。
+启动后访问 `http://localhost:8002`。
 
-## 配置
+- 如果没有配置 `CC_WEB_PASSWORD`，首次启动会自动生成随机密码并打印到控制台
+- 首次自动生成的密码登录后需要修改
 
-### 环境变量 (.env)
+## 配置说明
 
-| 变量 | 必填 | 默认值 | 说明 |
-|------|:---:|--------|------|
-| `CC_WEB_PASSWORD` | 否 | 自动生成 | Web 登录密码（首次启动自动迁移到 `config/auth.json`） |
-| `PORT` | 否 | `8002` | 服务监听端口 |
-| `CLAUDE_PATH` | 否 | `claude` | Claude CLI 可执行文件路径 |
-| `CODEX_PATH` | 否 | `codex` | Codex CLI 可执行文件路径 |
-| `CC_WEB_CONFIG_DIR` | 否 | `./config` | 配置目录覆写（主要供隔离测试使用） |
-| `CC_WEB_SESSIONS_DIR` | 否 | `./sessions` | 会话目录覆写（主要供隔离测试使用） |
-| `CC_WEB_LOGS_DIR` | 否 | `./logs` | 日志目录覆写（主要供隔离测试使用） |
-| `PUSHPLUS_TOKEN` | 否 | - | PushPlus Token（首次启动自动迁移到通知配置） |
+### 环境变量
 
-### 通知配置
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CC_WEB_PASSWORD` | 自动生成 | Web 登录密码 |
+| `PORT` | `8002` | 服务监听端口 |
+| `CLAUDE_PATH` | `claude` | Claude CLI 可执行文件路径 |
+| `CODEX_PATH` | `codex` | Codex CLI 可执行文件路径 |
+| `PUSHPLUS_TOKEN` | 空 | 首次启动时可迁移到通知配置 |
+| `CC_WEB_CONFIG_DIR` | `./config` | 配置目录覆写，适合测试隔离 |
+| `CC_WEB_SESSIONS_DIR` | `./sessions` | 会话与运行时数据目录覆写 |
+| `CC_WEB_LOGS_DIR` | `./logs` | 日志目录覆写 |
+| `CC_WEB_PUBLIC_DIR` | `./public` | 静态资源目录覆写 |
+| `CC_WEB_IP_WHITELIST` | 空 | 额外的登录失败白名单 IP，多个值可用逗号或空格分隔 |
 
-点击侧边栏底部的 **⚙ 设置按钮**，在 Web UI 中可视化配置推送通知：
+参考模板见 [`.env.example`](./.env.example)。
 
-| 通知方式 | 所需配置 | 获取方式 |
-|---------|---------|---------|
-| **PushPlus**（微信推送） | Token | [pushplus.plus](https://www.pushplus.plus/) 注册获取 |
-| **Telegram** | Bot Token + Chat ID | [@BotFather](https://t.me/BotFather) 创建机器人 |
-| **Server酱** | SendKey | [sct.ftqq.com](https://sct.ftqq.com/) 注册获取 |
-| **飞书机器人** | Webhook URL | 飞书群 → 设置 → 群机器人 → 添加自定义机器人 |
-| **QQ（Qmsg）** | Qmsg Key | [qmsg.zendee.cn](https://qmsg.zendee.cn/) 登录后获取，需添加接收 QQ 号 |
+### 运行时生成的配置文件
 
-配置保存在 `config/notify.json`，Token 在 UI 中脱敏显示（仅显示前4后4位）。
+项目启动后会在 `config/` 下维护这些文件：
 
-### 密码管理
+- `auth.json`：登录密码与首次改密状态
+- `notify.json`：通知渠道和 AI 摘要配置
+- `model.json`：Claude 相关模型与模板配置
+- `codex.json`：Codex profile 与运行时配置
+- `dev.json`：SSH Host、GitHub Token、仓库列表
+- `banned_ips.json`：触发防暴力破解后的封禁记录
 
-密码存储在 `config/auth.json`，支持自动生成与 Web UI 修改：
+### 登录与防护
 
-- **首次启动**（无 `.env` 密码、无 `auth.json`）：自动生成 12 位随机密码，打印到控制台，首次登录强制修改
-- **从 `.env` 迁移**：如已在 `.env` 设置 `CC_WEB_PASSWORD`，启动时自动迁移到 `auth.json`，无需改密
-- **Web UI 修改**：设置面板 → 修改密码（需输入当前密码）
-- **密码要求**：≥ 8 位，包含大写/小写/数字/特殊字符中的至少 2 种
-- **改密后**：所有已登录会话失效，需重新认证
+- 认证方式为密码登录 + WebSocket Token
+- 连续多次输错密码会触发 IP 封禁
+- `127.0.0.1`、`::1`、Tailscale `100.x.x.x` 默认不会被封
 
-## 项目结构
+## 主要使用方式
 
+### 1. 作为 Web 终端
+
+- 在左侧 Host 区域管理本机和远程主机
+- 通过 `+` 创建持久化终端
+- 终端底层使用 `tmux`，刷新页面或重新登录后可重新挂载
+- 移动端提供额外按键栏，方便发送 `ESC`、方向键、`CTRL` 等操作
+
+### 2. 作为 Claude / Codex 会话面板
+
+- 在会话中切换 Agent、模型和权限模式
+- 支持本地目录任务和远程 SSH 任务
+- Claude / Codex 的历史、设置、导入入口彼此隔离
+- 工具调用、流式输出和部分 token 信息会在界面中展示
+
+### 3. 作为通知中心
+
+- 任务完成、异常、中断或上下文压缩后可触发通知
+- AI 摘要支持三种凭证来源：
+  - Claude 当前激活模板
+  - Codex 当前激活 Profile
+  - 独立自定义 OpenAI 兼容接口
+
+## 架构概览
+
+```text
+Browser
+  ├─ WebSocket / HTTP
+  ▼
+server.js
+  ├─ Claude / Codex 子进程管理
+  ├─ tmux 终端会话管理
+  ├─ 配置、会话、附件、日志持久化
+  └─ 通知与历史导入
 ```
-supertermal/
-├── server.js              # Node.js 后端（HTTP + WebSocket + 进程管理 + 通知）
+
+几个关键实现点：
+
+- Agent 任务与 Web 连接解耦，浏览器关闭后进程仍可继续运行
+- Claude / Codex 运行时由 [`lib/agent-runtime.js`](./lib/agent-runtime.js) 统一封装
+- Codex 本地 rollout 导入由 [`lib/codex-rollouts.js`](./lib/codex-rollouts.js) 解析
+- 持久化终端依赖 `tmux` + `node-pty`
+- 附件存储在 `sessions/_attachments/`，默认只接受图片
+
+## 目录结构
+
+```text
+cc-web/
+├── server.js
 ├── lib/
-│   ├── agent-runtime.js    # Claude / Codex 运行时适配层
-│   └── codex-rollouts.js   # Codex rollout 历史解析
 ├── public/
-│   ├── index.html          # 页面结构
-│   ├── app.js              # 前端逻辑（WebSocket 通信、UI 交互）
-│   ├── style.css           # 样式（和风暖色调主题）
-│   └── sw.js               # Service Worker（移动端推送通知）
-├── config/
-│   ├── codex.json          # Codex 独立配置（运行时生成）
-│   ├── notify.json         # 通知渠道配置（运行时生成）
-│   └── auth.json           # 密码配置（运行时生成）
-├── sessions/               # 对话历史 JSON 文件（运行时生成）
-├── logs/                   # 进程生命周期日志（运行时生成）
 ├── scripts/
-│   ├── regression.js       # 隔离式回归脚本
-│   ├── mock-claude.js      # 回归用 mock Claude CLI
-│   └── mock-codex.js       # 回归用 mock Codex CLI
-├── .env.example            # 环境变量模板
-├── start.bat               # Windows 一键启动脚本
-├── .gitignore
+├── test/
+├── config/        # 运行后生成
+├── sessions/      # 运行后生成
+├── logs/          # 运行后生成
 ├── package.json
+├── CHANGELOG.md
 └── README.md
 ```
 
-## 架构设计
+## 测试与验证
 
-### 进程模型
+可用的本地验证方式：
 
-```
-浏览器 ←WebSocket→ Node.js (server.js) ←文件I/O→ Claude / Codex CLI (detached)
-```
-
-- 每条用户消息会根据当前会话 Agent，spawn Claude 或 Codex 子进程
-- 进程使用 `detached: true` + `proc.unref()`，独立于 Node.js 生命周期
-- stdin/stdout/stderr 通过文件传递（`sessions/{id}-run/`），不使用 pipe
-- PID 持久化到文件，服务重启后自动恢复（`recoverProcesses()`）
-- 使用 `FileTailer` 实时监听输出文件变化，流式推送给前端
-- Claude / Codex 的 spawn spec 与事件解析分别由 `lib/agent-runtime.js` 管理
-
-### 后台任务流程
-
-1. 用户发送消息 → spawn Claude 进程
-2. 用户关闭浏览器 → 进程继续运行（detached）
-3. 进程完成 → PID 监控检测到退出
-4. 发送推送通知（PushPlus/Telegram/...）
-5. 用户重新打开 → 自动同步完成的回复
-
-### 进程日志
-
-日志文件 `logs/process.log`（JSONL 格式，自动轮转 2MB），记录完整的进程生命周期：
-
-| 事件 | 说明 |
-|------|------|
-| `process_spawn` | 进程创建（PID、模式、模型） |
-| `process_complete` | 进程完成（退出码、耗时、费用） |
-| `ws_connect` / `ws_disconnect` | 客户端连接/断开 |
-| `ws_resume_attach` | 客户端重连并挂载到运行中的进程 |
-| `recovery_alive` / `recovery_dead` | 服务重启时恢复进程 |
-| `heartbeat` | 每 60 秒活跃进程状态快照 |
-
-查看日志：
 ```bash
-tail -f logs/process.log | jq .
+node --test test/*.test.js
+npm run regression
 ```
 
-## 生产部署
+- `test/` 里是前端终端输入与 attach 状态的单测
+- `npm run regression` 会启动隔离环境，用 mock CLI 校验主流程
 
-### systemd 服务
+## 部署建议
 
-创建 `/etc/systemd/system/cc-web.service`：
+### systemd
+
+可以把 CC-Web 作为常驻服务运行，关键点是只重启 Node 进程，不要误杀 Claude / Codex 子进程：
 
 ```ini
 [Unit]
-Description=CC-Web - Claude Code Web Chat UI
+Description=CC-Web
 After=network.target
 
 [Service]
 Type=simple
 User=your-user
-WorkingDirectory=/path/to/supertermal
+WorkingDirectory=/path/to/cc-web
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=5
-# 重要：只杀 Node.js 进程，不杀 Claude 子进程
 KillMode=process
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-> **`KillMode=process` 非常重要**：确保 systemd 重启服务时只杀 Node.js 进程，Claude 子进程继续运行，服务恢复后自动重新挂载。
+### Nginx 反代
 
-```bash
-sudo systemctl enable cc-web
-sudo systemctl start cc-web
-```
-
-### Nginx 反向代理
+如果对外提供访问，需要开启 WebSocket 代理，并适当放宽长连接超时：
 
 ```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-
-    ssl_certificate     /path/to/fullchain.pem;
-    ssl_certificate_key /path/to/privkey.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:8002;
-        proxy_http_version 1.1;
-
-        # WebSocket 支持
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-
-        # 长连接超时（Claude 任务可能运行较久）
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
+location / {
+    proxy_pass http://127.0.0.1:8002;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
 }
 ```
 
-### Windows 部署
+## 已知前提
 
-适用于在个人电脑上运行 CC-Web，通过手机远程控制 Claude Code。
+- 没有 `tmux` 时，终端功能不可用
+- 没有安装对应 CLI 时，Claude / Codex 只能使用已安装的一侧
+- Codex 本地历史导入依赖 SQLite 能力，低版本 Node 建议额外安装 `sqlite3`
 
-**启动方式**：双击 `start.bat`，或在终端运行：
-```cmd
-cd supertermal
-npm install
-node server.js
-```
+## 许可证
 
-**局域网访问**（手机和电脑在同一 WiFi）：
-- 直接访问 `http://电脑局域网IP:8002`
-
-**远程访问**（外出时用手机控制家里电脑）：
-- 推荐使用 [Tailscale](https://tailscale.com/) — 电脑和手机各安装一个，自动组网，免费够用
-- 或使用 [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)（需域名）
-
-
-## 更新记录
-
-查看 [CHANGELOG.md](./CHANGELOG.md)
-
-## 致谢
-
-- 本项目得到 [@carroxaitech](https://github.com/carroxaitech)、[@YoungHong1992](https://github.com/YoungHong1992)的悉心指导，得到[@123aliez](https://github.com/123aliez)的算力支持，[@lytxsy](https://github.com/lytxsy)的深度测试，受益良多
-- 项目亦得到[linux.do](https://linux.do)启发
+MIT
